@@ -1,0 +1,8 @@
+.DS_Store
+.build/
+dist/
+*.xcuserstate
+*.xccheckout
+MIGRATION_HANDOFF.md
+docs/RELEASE_CHECKLIST.md
+.github/workflows/ci.yml
