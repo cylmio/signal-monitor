@@ -93,7 +93,7 @@ for (index, task) in tasks.enumerated() {
         color: NSColor(calibratedRed: 0.10, green: 0.11, blue: 0.13, alpha: 0.88),
         rect: NSRect(
             x: rear.minX + 4 * tileScale,
-            y: rear.maxY - 20 * tileScale,
+            y: rear.maxY - 25 * tileScale,
             width: rear.width - 8 * tileScale,
             height: 18 * tileScale
         )
