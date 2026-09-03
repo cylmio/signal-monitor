@@ -52,7 +52,7 @@ struct SignalView: View {
     }
 }
 
-private struct TaskTile: View {
+struct TaskTile: View {
     let task: TrackedTask
     let time: TimeInterval
 
@@ -81,7 +81,6 @@ private struct TaskTile: View {
                         RoundedRectangle(cornerRadius: 15, style: .continuous)
                             .stroke(.white.opacity(0.16), lineWidth: 1)
                     )
-                    .shadow(color: .black.opacity(0.22), radius: 5, y: 2)
                     .frame(width: 74, height: 52)
                     .offset(y: 26)
 
@@ -99,7 +98,6 @@ private struct TaskTile: View {
                 .fill(statusColor)
                 .frame(width: 10, height: 10)
                 .scaleEffect(dotScale)
-                .shadow(color: statusColor.opacity(glowOpacity), radius: 6)
         }
         .frame(width: 74)
         .accessibilityElement(children: .ignore)
@@ -148,7 +146,4 @@ private struct TaskTile: View {
         }
     }
 
-    private var glowOpacity: Double {
-        task.state == .idle || task.state == .offline ? 0 : 0.55
-    }
 }
