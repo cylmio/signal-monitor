@@ -4,6 +4,8 @@ Signal Monitor is a small, native macOS companion for Codex. It keeps the tasks 
 
 The app is free and local-first. It has no account, analytics, ads, or cloud service of its own. Signal Monitor is an independent community project and is not affiliated with or endorsed by OpenAI.
 
+![Signal Monitor showing idle, running, waiting-for-input, and completed Codex tasks](docs/images/signal-monitor-preview.png)
+
 ## What it does
 
 - Shows selected Codex tasks in a transparent horizontal or vertical strip.
