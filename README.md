@@ -39,12 +39,14 @@ No Hook installation is required for normal live status. An optional Hook integr
 
 - Gray: idle or offline.
 - Breathing blue: running.
-- Double-pulse amber: waiting for input, approval, or blocked.
+- Double-pulse amber: waiting for input, a detected command/file approval, or blocked.
 - Green with `>.`: completed and not yet reviewed. It stays green until the task card or its menu row is clicked; opening the task marks that completion as read and returns it to gray.
 
 Stopping or aborting a task manually returns it directly to gray. Starting a new turn returns the card to blue, even if an earlier completion was already acknowledged.
 
-Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. A read-only local Codex App Server and the optional Hook provide additional metadata and fallback signals. Users do not need to run scripts manually.
+Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Detected command and file-edit approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. A read-only local Codex App Server and the optional Hook provide additional metadata and fallback signals. Users do not need to run scripts manually.
+
+Codex currently does not expose every approval surface with the same timing. In particular, Computer Use app-control prompts may remain blue because their request metadata can become readable only after the user has responded.
 
 Signal Monitor currently depends on local Codex data formats and integration surfaces that may change between Codex releases. If an update breaks task discovery or status detection, please open an issue with the app and Codex versions plus the privacy-safe diagnostics report.
 
