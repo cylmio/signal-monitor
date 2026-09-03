@@ -14,6 +14,16 @@ test("approval resolution clears waiting state", () => {
   tracker.apply([{ threadId: "alpha", kind: "candidate" }], 1000);
   tracker.apply([{ threadId: "alpha", kind: "resolved" }], 2000);
   assert.equal(tracker.isWaiting("alpha", 3000), false);
+  assert.equal(tracker.isRunningAfterApproval("alpha"), true);
+});
+
+test("approved command stays active until its tool call completes", () => {
+  const tracker = new ApprovalStatusTracker(600);
+  tracker.apply([{ threadId: "alpha", kind: "candidate" }], 1000);
+  tracker.apply([{ threadId: "alpha", kind: "resolved" }], 2000);
+  assert.equal(tracker.isRunningAfterApproval("alpha"), true);
+  tracker.apply([{ threadId: "alpha", kind: "completed" }], 7000);
+  assert.equal(tracker.isRunningAfterApproval("alpha"), false);
 });
 
 test("fast ordinary tool completion prevents a yellow flash", () => {
@@ -23,4 +33,5 @@ test("fast ordinary tool completion prevents a yellow flash", () => {
     { threadId: "alpha", kind: "completed" },
   ], 1000);
   assert.equal(tracker.isWaiting("alpha", 2000), false);
+  assert.equal(tracker.isRunningAfterApproval("alpha"), false);
 });

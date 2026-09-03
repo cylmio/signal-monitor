@@ -134,7 +134,11 @@ function localTopLevelThreads() {
       cwd: item.cwd || null,
       createdAt: item.createdAt ?? null,
       recencyAt: item.recencyAt ?? null,
-      status: approvalTracker.isWaiting(item.id) ? "needsInput" : rollout.status,
+      status: approvalTracker.isWaiting(item.id)
+        ? "needsInput"
+        : approvalTracker.isRunningAfterApproval(item.id)
+          ? "active"
+          : rollout.status,
       signalMonitorCompletionAt: rollout.completionAt == null ? null : rollout.completionAt / 1000,
     };
   });
@@ -386,6 +390,34 @@ async function writeSnapshot(payload) {
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
+function startLocalSnapshotPublisher(snapshotProvider) {
+  let publishing = false;
+  let stopped = false;
+  const publish = async () => {
+    if (publishing || stopped) return;
+    publishing = true;
+    try {
+      const source = snapshotProvider();
+      const snapshot = {
+        ...source,
+        pinnedThreads: [...(source.pinnedThreads ?? [])],
+        threads: [...(source.threads ?? [])],
+      };
+      await writeSnapshot(mergeLocalTopLevelThreads(snapshot));
+    } catch {
+      // A transient local read must not terminate the remote task-list bridge.
+    } finally {
+      publishing = false;
+    }
+  };
+  const timer = setInterval(() => void publish(), 400);
+  void publish();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 async function runDesktopPipe() {
   if (process.env.SIGNAL_MONITOR_DISABLE_DESKTOP_PIPE === "1") {
     throw new Error("Codex desktop pipe disabled for fallback verification");
@@ -401,14 +433,20 @@ async function runDesktopPipe() {
   const listTool = catalog.tools.find(item => item.name === "list_threads");
   if (!listTool) throw new Error("Codex desktop did not expose list_threads");
   const threadId = interactionThreadId();
+  let latestSnapshot = { pinnedThreads: [], threads: [] };
+  const stopPublisher = startLocalSnapshotPublisher(() => latestSnapshot);
   let sequence = 1;
-  while (true) {
-    const result = await callTool(client, listTool, threadId, { limit: 50 }, sequence);
-    const snapshot = mergeLocalTopLevelThreads(textPayload(result));
-    await enrichAttentionState(client, catalog, snapshot, sequence);
-    await writeSnapshot(snapshot);
-    sequence += 1;
-    await delay(750);
+  try {
+    while (true) {
+      const result = await callTool(client, listTool, threadId, { limit: 50 }, sequence);
+      const snapshot = textPayload(result);
+      await enrichAttentionState(client, catalog, snapshot, sequence);
+      latestSnapshot = snapshot;
+      sequence += 1;
+      await delay(750);
+    }
+  } finally {
+    stopPublisher();
   }
 }
 
@@ -421,6 +459,8 @@ async function runAppServerFallback() {
   const client = new AppServerClient();
   await client.connect();
   process.stderr.write("signal-monitor bridge: using Codex App Server fallback\n");
+  let latestSnapshot = { pinnedThreads: [], threads: [] };
+  const stopPublisher = startLocalSnapshotPublisher(() => latestSnapshot);
   try {
     while (true) {
       const result = await client.request("thread/list", {
@@ -438,10 +478,11 @@ async function runAppServerFallback() {
         recencyAt: item.recencyAt ?? null,
         status: item.status?.type ?? "notLoaded",
       }));
-      await writeSnapshot(mergeLocalTopLevelThreads({ pinnedThreads: [], threads }));
+      latestSnapshot = { pinnedThreads: [], threads };
       await delay(750);
     }
   } finally {
+    stopPublisher();
     client.close();
   }
 }
