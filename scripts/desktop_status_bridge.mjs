@@ -7,6 +7,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { rolloutInfoFromFile } from "./rollout_status.mjs";
+import { ApprovalStatusTracker } from "./approval_status.mjs";
 
 const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const childProcesses = new Set();
@@ -18,6 +19,71 @@ const codexExecutable = process.env.CODEX_EXECUTABLE
   ?? path.join(os.homedir(), ".local/bin/codex");
 let lastSnapshotJSON = null;
 let lastSnapshotWrite = 0;
+const approvalLogDatabase = path.join(os.homedir(), ".codex/logs_2.sqlite");
+let approvalLogCursor = (() => {
+  try {
+    const latest = Number(execFileSync("/usr/bin/sqlite3", [
+      approvalLogDatabase,
+      "SELECT COALESCE(MAX(id), 0) FROM logs;",
+    ], { encoding: "utf8" }).trim());
+    // Replay a small recent window so launching while a prompt is already open
+    // can still reconstruct its candidate/resolved pair.
+    return Math.max(0, latest - 5000);
+  } catch {
+    return 0;
+  }
+})();
+const approvalTracker = new ApprovalStatusTracker();
+
+function refreshApprovalSignals() {
+  // Drain the replay window before publishing a snapshot. Otherwise an old
+  // candidate from an early batch can briefly appear yellow before its later
+  // resolved/completed row is consumed.
+  for (let batch = 0; batch < 10; batch += 1) {
+    const query = `
+    SELECT id,
+           thread_id AS threadId,
+           CASE
+             WHEN target = 'codex_core::stream_events_utils'
+              AND feedback_log_body LIKE '%ToolCall:%'
+              AND (
+                feedback_log_body LIKE '%tools.apply_patch%'
+                OR feedback_log_body LIKE '%request_user_input%'
+                OR (feedback_log_body LIKE '%sandbox_permissions%' AND feedback_log_body LIKE '%require_escalated%')
+                OR feedback_log_body LIKE '%cmd:"rm %'
+                OR feedback_log_body LIKE '%cmd: "rm %'
+              ) THEN 'candidate'
+             WHEN target = 'codex_core::stream_events_utils'
+              AND feedback_log_body LIKE '%ToolCall:%' THEN 'toolCall'
+             WHEN target = 'codex_core::session::handlers'
+              AND (feedback_log_body LIKE '%ExecApproval {%' OR feedback_log_body LIKE '%PatchApproval {%') THEN 'resolved'
+             WHEN target = 'codex_core::tools::parallel' THEN 'completed'
+           END AS kind
+      FROM logs
+     WHERE id > ${Math.max(0, Math.trunc(approvalLogCursor))}
+       AND thread_id IS NOT NULL
+       AND (
+         (target = 'codex_core::stream_events_utils' AND feedback_log_body LIKE '%ToolCall:%')
+         OR target = 'codex_core::tools::parallel'
+         OR (target = 'codex_core::session::handlers'
+             AND (feedback_log_body LIKE '%ExecApproval {%' OR feedback_log_body LIKE '%PatchApproval {%'))
+       )
+     ORDER BY id ASC
+     LIMIT 1000;
+    `;
+    try {
+      const output = execFileSync("/usr/bin/sqlite3", ["-json", approvalLogDatabase, query], { encoding: "utf8" }).trim();
+      if (!output) return;
+      const events = JSON.parse(output);
+      for (const event of events) approvalLogCursor = Math.max(approvalLogCursor, Number(event.id) || 0);
+      approvalTracker.apply(events);
+      if (events.length < 1000) return;
+    } catch {
+      // This signal is supplemental; rollout lifecycle state remains available.
+      return;
+    }
+  }
+}
 
 function desktopPipe() {
   const output = execFileSync("/bin/ps", ["-axo", "command="], { encoding: "utf8" });
@@ -38,6 +104,7 @@ function interactionThreadId() {
 }
 
 function localTopLevelThreads() {
+  refreshApprovalSignals();
   const database = path.join(os.homedir(), ".codex/state_5.sqlite");
   const query = `
     SELECT
@@ -67,7 +134,7 @@ function localTopLevelThreads() {
       cwd: item.cwd || null,
       createdAt: item.createdAt ?? null,
       recencyAt: item.recencyAt ?? null,
-      status: rollout.status,
+      status: approvalTracker.isWaiting(item.id) ? "needsInput" : rollout.status,
       signalMonitorCompletionAt: rollout.completionAt == null ? null : rollout.completionAt / 1000,
     };
   });

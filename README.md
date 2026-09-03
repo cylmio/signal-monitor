@@ -44,7 +44,7 @@ No Hook installation is required for normal live status. An optional Hook integr
 
 Stopping or aborting a task manually returns it directly to gray. Starting a new turn returns the card to blue, even if an earlier completion was already acknowledged.
 
-Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs; task content is not copied into Signal Monitor's event store. A read-only local Codex App Server and the optional Hook provide additional metadata and fallback signals. Users do not need to run scripts manually.
+Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. A read-only local Codex App Server and the optional Hook provide additional metadata and fallback signals. Users do not need to run scripts manually.
 
 Signal Monitor currently depends on local Codex data formats and integration surfaces that may change between Codex releases. If an update breaks task discovery or status detection, please open an issue with the app and Codex versions plus the privacy-safe diagnostics report.
 

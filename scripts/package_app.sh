@@ -14,6 +14,7 @@ cp "$ROOT_DIR/.build/apple/Products/Release/SignalMonitor" "$MACOS_DIR/SignalMon
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$ROOT_DIR/scripts/desktop_status_bridge.mjs" "$RESOURCES_DIR/desktop_status_bridge.mjs"
 cp "$ROOT_DIR/scripts/rollout_status.mjs" "$RESOURCES_DIR/rollout_status.mjs"
+cp "$ROOT_DIR/scripts/approval_status.mjs" "$RESOURCES_DIR/approval_status.mjs"
 cp "$ROOT_DIR/hooks/signal_monitor_hook.py" "$RESOURCES_DIR/signal_monitor_hook.py"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 cp "$ROOT_DIR/Resources/PrivacyInfo.xcprivacy" "$RESOURCES_DIR/PrivacyInfo.xcprivacy"
