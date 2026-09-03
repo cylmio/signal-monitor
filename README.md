@@ -16,6 +16,12 @@ The app is free and local-first. It has no account, analytics, ads, or cloud ser
 - Discovers newly created and removed tasks automatically; the menu also includes a manual refresh.
 - Includes English and Simplified Chinese UI, Launch at Login, a confirmed **Reset Settings…** action, and a privacy-safe diagnostics report.
 
+## Current experience and limitations
+
+Signal Monitor works best as an at-a-glance companion, rather than an authoritative real-time event stream. Task start, stop, completion, and task-list changes normally update automatically. Once Codex has recorded a lifecycle event locally, an active task is usually reflected within about 0.75–1.5 seconds; idle polling can take up to about 2 seconds.
+
+Approval prompts are the main current limitation. A command or file-edit approval may initially remain blue, turn amber only after **Allow** is clicked, or remain amber briefly after approval. Some Computer Use approvals may not turn amber at all. Do not rely on the amber state to catch every approval prompt in this early preview.
+
 ## Requirements
 
 - macOS 13 or later on Apple silicon or Intel.
@@ -46,9 +52,11 @@ No Hook installation is required for normal live status. An optional Hook integr
 
 Stopping or aborting a task manually returns it directly to gray. Starting a new turn returns the card to blue, even if an earlier completion was already acknowledged.
 
+## Why approval timing varies
+
 Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Detected command and file-edit approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. The bridge polls adaptively (faster while tasks are active, slower while idle) and does not start an additional Codex App Server. The optional Hook provides supplemental signals. Users do not need to run scripts manually.
 
-Codex currently does not expose every approval surface with the same timing. In particular, Computer Use app-control prompts may remain blue because their request metadata can become readable only after the user has responded.
+Codex currently does not expose every approval surface through one immediate lifecycle signal. Some request and resolution metadata is written to the local data sources later or in batches. Signal Monitor cannot show a transition until that metadata becomes readable; once it is readable, the remaining delay comes from the adaptive bridge poll and the app's file-change fallback.
 
 Signal Monitor currently depends on local Codex data formats and integration surfaces that may change between Codex releases. If an update breaks task discovery or status detection, please open an issue with the app and Codex versions plus the privacy-safe diagnostics report.
 
@@ -83,6 +91,6 @@ Secrets are read from the login keychain through the named notary profile and ar
 
 ## Distribution note
 
-Version 0.1 targets a free, notarized GitHub release. The current integration starts a local Codex process and installs user-approved hooks, which is suitable for direct distribution but would require a separate sandbox-compatible architecture before a Mac App Store submission.
+Version 0.1 targets a free, notarized GitHub release. The current integration reads local Codex data and can install user-approved hooks, which is suitable for direct distribution but would require a separate sandbox-compatible architecture before a Mac App Store submission.
 
 Signal Monitor is licensed under the [MIT License](LICENSE). Contributions are described in [CONTRIBUTING.md](CONTRIBUTING.md).
