@@ -59,7 +59,7 @@ function localTopLevelThreads() {
   const output = execFileSync("/usr/bin/sqlite3", ["-json", database, query], { encoding: "utf8" }).trim();
   if (!output) return [];
   return JSON.parse(output).map(item => {
-    const rollout = rolloutInfoFromFile(item.rolloutPath);
+    const rollout = rolloutInfoFromFile(item.rolloutPath, Date.now(), item.cwd || null);
     return {
       kind: "codex",
       id: item.id,

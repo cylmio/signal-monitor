@@ -61,3 +61,35 @@ test("an escalated tool call waits for user permission", () => {
   }));
   assert.equal(statusFromRollout(file, now + 2000), "active");
 });
+
+test("an apply_patch outside the task workspace waits for permission", () => {
+  clearRolloutStatusCache();
+  const directory = mkdtempSync(path.join(os.tmpdir(), "signal-monitor-rollout-"));
+  const file = path.join(directory, "rollout.jsonl");
+  const now = Date.parse("2026-09-03T12:00:00.000Z");
+  writeFileSync(file,
+    line("2026-09-03T12:00:00.000Z", "event_msg", { type: "task_started" }) +
+    line("2026-09-03T12:00:01.000Z", "response_item", {
+      type: "custom_tool_call",
+      name: "exec",
+      input: "const patch = `*** Begin Patch\n*** Add File: /private/tmp/demo.md\n+demo\n*** End Patch`;\ntext(await tools.apply_patch(patch));",
+    })
+  );
+  assert.equal(rolloutInfoFromFile(file, now + 1000, "/Users/example/project").status, "needsInput");
+});
+
+test("an apply_patch inside the task workspace remains active", () => {
+  clearRolloutStatusCache();
+  const directory = mkdtempSync(path.join(os.tmpdir(), "signal-monitor-rollout-"));
+  const file = path.join(directory, "rollout.jsonl");
+  const now = Date.parse("2026-09-03T12:00:00.000Z");
+  writeFileSync(file,
+    line("2026-09-03T12:00:00.000Z", "event_msg", { type: "task_started" }) +
+    line("2026-09-03T12:00:01.000Z", "response_item", {
+      type: "custom_tool_call",
+      name: "exec",
+      input: "const patch = `*** Begin Patch\n*** Update File: /Users/example/project/README.md\n*** End Patch`;\ntext(await tools.apply_patch(patch));",
+    })
+  );
+  assert.equal(rolloutInfoFromFile(file, now + 1000, "/Users/example/project").status, "active");
+});

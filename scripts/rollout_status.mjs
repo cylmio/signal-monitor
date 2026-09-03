@@ -1,4 +1,5 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import path from "node:path";
 
 const MAX_READ_BYTES = 4 * 1024 * 1024;
 const cache = new Map();
@@ -14,7 +15,21 @@ function readRange(filePath, start, length) {
   }
 }
 
-function applyLine(record, line) {
+function patchTargetsOutsideCwd(toolInput, cwd) {
+  if (!cwd || !toolInput.includes("tools.apply_patch")) return false;
+  const targetPattern = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+  for (const match of toolInput.matchAll(targetPattern)) {
+    const target = match[1].trim();
+    if (!path.isAbsolute(target)) continue;
+    const relative = path.relative(path.resolve(cwd), path.resolve(target));
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyLine(record, line, cwd) {
   let item;
   try {
     item = JSON.parse(line);
@@ -44,7 +59,8 @@ function applyLine(record, line) {
       ? payload.input
       : JSON.stringify(payload.arguments ?? "");
     const requestsEscalation = /["']?sandbox_permissions["']?\s*:\s*["']require_escalated["']/.test(toolInput);
-    if (payload.type === "custom_tool_call" && (name === "request_user_input" || requestsEscalation)) {
+    const requestsExternalPatch = patchTargetsOutsideCwd(toolInput, cwd);
+    if (payload.type === "custom_tool_call" && (name === "request_user_input" || requestsEscalation || requestsExternalPatch)) {
       record.state = "needsInput";
       record.completedAt = null;
     } else if (payload.type === "custom_tool_call_output" && record.state === "needsInput") {
@@ -53,15 +69,15 @@ function applyLine(record, line) {
   }
 }
 
-function applyChunk(record, text, startsMidFile) {
+function applyChunk(record, text, startsMidFile, cwd) {
   let lines = text.split("\n");
   if (startsMidFile) lines = lines.slice(1);
   for (const line of lines) {
-    if (line.trim()) applyLine(record, line);
+    if (line.trim()) applyLine(record, line, cwd);
   }
 }
 
-export function rolloutInfoFromFile(filePath, nowMs = Date.now()) {
+export function rolloutInfoFromFile(filePath, nowMs = Date.now(), cwd = null) {
   if (!filePath) return { status: "notLoaded", completionAt: null };
   let descriptor;
   let stat;
@@ -78,10 +94,10 @@ export function rolloutInfoFromFile(filePath, nowMs = Date.now()) {
   if (!record || stat.size < record.size) {
     record = { size: 0, state: stat.mtimeMs > nowMs - 10_000 ? "active" : "idle", completedAt: null };
     const start = Math.max(0, stat.size - MAX_READ_BYTES);
-    applyChunk(record, readRange(filePath, start, stat.size - start), start > 0);
+    applyChunk(record, readRange(filePath, start, stat.size - start), start > 0, cwd);
   } else if (stat.size > record.size) {
     const start = Math.max(record.size, stat.size - MAX_READ_BYTES);
-    applyChunk(record, readRange(filePath, start, stat.size - start), start > record.size);
+    applyChunk(record, readRange(filePath, start, stat.size - start), start > record.size, cwd);
   }
   record.size = stat.size;
   cache.set(filePath, record);
