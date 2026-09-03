@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Mirror the Codex desktop sidebar snapshot into a local read-only JSON file.
 
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -10,13 +10,10 @@ import { rolloutInfoFromFile } from "./rollout_status.mjs";
 import { ApprovalStatusTracker } from "./approval_status.mjs";
 
 const MAX_FRAME_BYTES = 8 * 1024 * 1024;
-const childProcesses = new Set();
 const hostParentPID = process.ppid;
 const dataDirectory = process.env.SIGNAL_MONITOR_DATA_DIR
   ?? path.join(os.homedir(), "Library/Application Support/Signal Monitor");
 const destination = path.join(dataDirectory, "desktop-status.json");
-const codexExecutable = process.env.CODEX_EXECUTABLE
-  ?? path.join(os.homedir(), ".local/bin/codex");
 let lastSnapshotJSON = null;
 let lastSnapshotWrite = 0;
 const approvalLogDatabase = path.join(os.homedir(), ".codex/logs_2.sqlite");
@@ -286,76 +283,7 @@ class NativePipeClient {
   }
 }
 
-class AppServerClient {
-  constructor() {
-    this.nextId = 1;
-    this.pending = new Map();
-    this.buffer = "";
-  }
-
-  async connect() {
-    this.process = spawn(codexExecutable, ["app-server"], {
-      stdio: ["pipe", "pipe", "ignore"],
-    });
-    childProcesses.add(this.process);
-    this.process.stdout.setEncoding("utf8");
-    this.process.stdout.on("data", chunk => this.onData(chunk));
-    this.process.on("error", error => this.fail(error));
-    this.process.on("exit", code => {
-      childProcesses.delete(this.process);
-      this.fail(new Error(`Codex App Server exited with code ${code}`));
-    });
-
-    await this.request("initialize", {
-      clientInfo: {
-        name: "signal-monitor-bridge",
-        title: "Signal Monitor Bridge",
-        version: "0.1.0",
-      },
-    });
-    this.notify("initialized");
-  }
-
-  request(method, params) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.process.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
-    });
-  }
-
-  notify(method, params = {}) {
-    this.process.stdin.write(`${JSON.stringify({ method, params })}\n`);
-  }
-
-  onData(chunk) {
-    this.buffer += chunk;
-    while (this.buffer.includes("\n")) {
-      const newline = this.buffer.indexOf("\n");
-      const line = this.buffer.slice(0, newline);
-      this.buffer = this.buffer.slice(newline + 1);
-      if (!line.trim()) continue;
-      const message = JSON.parse(line);
-      const pending = this.pending.get(Number(message.id));
-      if (!pending) continue;
-      this.pending.delete(Number(message.id));
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    }
-  }
-
-  fail(error) {
-    for (const pending of this.pending.values()) pending.reject(error);
-    this.pending.clear();
-  }
-
-  close() {
-    this.process?.kill();
-  }
-}
-
 function terminate(exitCode = 0) {
-  for (const child of childProcesses) child.kill("SIGTERM");
   process.exit(exitCode);
 }
 
@@ -364,7 +292,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 // A forced app quit does not give AppKit a chance to terminate its helper.
-// Watch the original parent so the bridge and its App Server child cannot linger.
+// Watch the original parent so the bridge cannot linger after a forced app quit.
 setInterval(() => {
   try {
     process.kill(hostParentPID, 0);
@@ -391,30 +319,31 @@ async function writeSnapshot(payload) {
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 function startLocalSnapshotPublisher(snapshotProvider) {
-  let publishing = false;
   let stopped = false;
-  const publish = async () => {
-    if (publishing || stopped) return;
-    publishing = true;
-    try {
-      const source = snapshotProvider();
-      const snapshot = {
-        ...source,
-        pinnedThreads: [...(source.pinnedThreads ?? [])],
-        threads: [...(source.threads ?? [])],
-      };
-      await writeSnapshot(mergeLocalTopLevelThreads(snapshot));
-    } catch {
-      // A transient local read must not terminate the remote task-list bridge.
-    } finally {
-      publishing = false;
+  const run = async () => {
+    while (!stopped) {
+      let interval = 2000;
+      try {
+        const source = snapshotProvider();
+        const snapshot = mergeLocalTopLevelThreads({
+          ...source,
+          pinnedThreads: [...(source.pinnedThreads ?? [])],
+          threads: [...(source.threads ?? [])],
+        });
+        const tasks = [...(snapshot.pinnedThreads ?? []), ...(snapshot.threads ?? [])];
+        if (tasks.some(item => item.status === "active" || item.status === "needsInput")) {
+          interval = 750;
+        }
+        await writeSnapshot(snapshot);
+      } catch {
+        // A transient local read must not terminate the status bridge.
+      }
+      await delay(interval);
     }
   };
-  const timer = setInterval(() => void publish(), 400);
-  void publish();
+  void run();
   return () => {
     stopped = true;
-    clearInterval(timer);
   };
 }
 
@@ -443,60 +372,26 @@ async function runDesktopPipe() {
       await enrichAttentionState(client, catalog, snapshot, sequence);
       latestSnapshot = snapshot;
       sequence += 1;
-      await delay(750);
+      await delay(5000);
     }
   } finally {
     stopPublisher();
   }
 }
 
-const sourceKinds = [
-  "cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
-  "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
-];
-
-async function runAppServerFallback() {
-  const client = new AppServerClient();
-  await client.connect();
-  process.stderr.write("signal-monitor bridge: using Codex App Server fallback\n");
-  let latestSnapshot = { pinnedThreads: [], threads: [] };
-  const stopPublisher = startLocalSnapshotPublisher(() => latestSnapshot);
+async function runLocalFallback() {
+  process.stderr.write("signal-monitor bridge: using local Codex database fallback\n");
+  const stopPublisher = startLocalSnapshotPublisher(() => ({ pinnedThreads: [], threads: [] }));
   try {
-    while (true) {
-      const result = await client.request("thread/list", {
-        limit: 100,
-        sortKey: "updated_at",
-        sortDirection: "desc",
-        sourceKinds,
-      });
-      const threads = (result.data ?? []).map(item => ({
-        kind: "codex",
-        id: item.id,
-        title: item.name ?? item.preview ?? `Task ${String(item.id).slice(-6)}`,
-        cwd: item.cwd ?? null,
-        createdAt: item.createdAt ?? null,
-        recencyAt: item.recencyAt ?? null,
-        status: item.status?.type ?? "notLoaded",
-      }));
-      latestSnapshot = { pinnedThreads: [], threads };
-      await delay(750);
-    }
+    while (true) await delay(60_000);
   } finally {
     stopPublisher();
-    client.close();
   }
 }
 
-while (true) {
-  try {
-    await runDesktopPipe();
-  } catch (error) {
-    process.stderr.write(`signal-monitor bridge: ${error.message}\n`);
-    try {
-      await runAppServerFallback();
-    } catch (fallbackError) {
-      process.stderr.write(`signal-monitor fallback: ${fallbackError.message}\n`);
-      await delay(2000);
-    }
-  }
+try {
+  await runDesktopPipe();
+} catch (error) {
+  process.stderr.write(`signal-monitor bridge: ${error.message}\n`);
+  await runLocalFallback();
 }

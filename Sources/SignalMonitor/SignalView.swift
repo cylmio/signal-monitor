@@ -5,7 +5,7 @@ struct SignalView: View {
     @ObservedObject var store: SignalStore
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !hasAnimatedTasks)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: !hasAnimatedTasks)) { timeline in
             if store.orientation == .horizontal {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {

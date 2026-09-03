@@ -159,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
         add(menu, language.text("Manage Focus…", "管理聚焦任务…"), #selector(showFocusManager))
+        add(menu, language.text("Reset Settings…", "恢复初始设置…"), #selector(resetSettings))
         addLanguageMenu(to: menu)
         if !store.displayTasks.isEmpty {
             menu.addItem(.separator())
@@ -265,6 +266,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     @objc private func refreshTasks() { bridge.refresh() }
+    @objc private func resetSettings() {
+        let language = store.language
+        let alert = NSAlert()
+        alert.messageText = language.text("Reset Signal Monitor settings?", "恢复 Signal Monitor 初始设置？")
+        alert.informativeText = language.text(
+            "This resets focused tasks and their order, nicknames, language, orientation, sorting, window position, and completion acknowledgements. Hook integration and Launch at Login are not changed.",
+            "这会重置聚焦任务及顺序、昵称、语言、横纵方向、排序方式、窗口位置和完成确认记录。Hook 集成与登录时启动不会改变。"
+        )
+        alert.addButton(withTitle: language.text("Reset", "恢复"))
+        alert.addButton(withTitle: language.text("Cancel", "取消"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        store.resetPreferencesToDefaults()
+        let screen = NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
+        let origin = defaultPanelOrigin(for: panel.frame.size, in: screen)
+        panel.setFrameOrigin(origin)
+        UserDefaults.standard.set(NSStringFromPoint(origin), forKey: "SignalMonitor.panelOrigin")
+        focusWindow?.title = "Signal Monitor — Focused Tasks"
+        diagnosticsWindow?.title = "Signal Monitor — Diagnostics"
+        diagnosticsModel?.setLanguage(.english)
+        revealPanel(placingOnScreenIfNeeded: true)
+    }
     @objc private func openFocusedTask(_ sender: NSMenuItem) {
         guard
             let threadID = sender.representedObject as? String,

@@ -27,10 +27,9 @@ final class AppServerBridge {
         watcher = DirectoryWatcher(directory: AppPaths.supportDirectory) { [weak self] in
             Task { @MainActor in self?.scan() }
         }
-        // Directory notifications are normally immediate, but macOS can coalesce
-        // them while the app is in the background. Keep the polling fallback
-        // short enough that an approved prompt cannot visibly linger yellow.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Directory notifications are normally immediate. This slower timer is
+        // only a fallback for coalesced notifications and sleep/wake behavior.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.scan() }
         }
     }

@@ -181,6 +181,35 @@ final class StatusReducerTests: XCTestCase {
         XCTAssertEqual(FocusSortMode.creationTime.title(in: .simplifiedChinese), "创建时间")
     }
 
+    @MainActor
+    func testResetPreferencesRestoresDefaults() {
+        let store = SignalStore()
+        let originalLanguage = store.language
+        let originalOrientation = store.orientation
+        let originalSortMode = store.focusSortMode
+        defer {
+            store.setLanguage(originalLanguage)
+            store.setOrientation(originalOrientation)
+            store.setFocusSortMode(originalSortMode)
+        }
+
+        let id = "reset-\(UUID().uuidString)"
+        store.registerTaskMetadata(id: id, title: "Reset me", cwd: nil)
+        store.setFocused(id, true)
+        store.setNickname("Nickname", for: id)
+        store.setLanguage(.simplifiedChinese)
+        store.setOrientation(.vertical)
+        store.setFocusSortMode(.creationTime)
+
+        store.resetPreferencesToDefaults()
+
+        XCTAssertEqual(store.language, .english)
+        XCTAssertEqual(store.orientation, .horizontal)
+        XCTAssertEqual(store.focusSortMode, .lastStartedTime)
+        XCTAssertTrue(store.displayTasks.isEmpty)
+        XCTAssertEqual(store.nickname(for: id), "")
+    }
+
     func testIntegrationRemovalPreservesUnrelatedHooks() {
         let root: [String: Any] = [
             "description": "Existing user hooks",

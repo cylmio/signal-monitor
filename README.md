@@ -12,7 +12,7 @@ The app is free and local-first. It has no account, analytics, ads, or cloud ser
 - Supports local nicknames and manual ordering for focused tasks.
 - Sorts unselected tasks by creation time or most recent task start.
 - Discovers newly created and removed tasks automatically; the menu also includes a manual refresh.
-- Includes English and Simplified Chinese UI, Launch at Login, and a privacy-safe diagnostics report.
+- Includes English and Simplified Chinese UI, Launch at Login, a confirmed **Reset Settings…** action, and a privacy-safe diagnostics report.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ No Hook installation is required for normal live status. An optional Hook integr
 
 Stopping or aborting a task manually returns it directly to gray. Starting a new turn returns the card to blue, even if an earlier completion was already acknowledged.
 
-Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Detected command and file-edit approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. A read-only local Codex App Server and the optional Hook provide additional metadata and fallback signals. Users do not need to run scripts manually.
+Task discovery comes from the local Codex task index. Running, completion, and interruption states are derived from lifecycle markers in Codex's local rollout logs. Detected command and file-edit approval state is derived from privacy-filtered local log metadata: only a task identifier and event category leave the database query, never the command or tool body. Task content is not copied into Signal Monitor's event store. The bridge polls adaptively (faster while tasks are active, slower while idle) and does not start an additional Codex App Server. The optional Hook provides supplemental signals. Users do not need to run scripts manually.
 
 Codex currently does not expose every approval surface with the same timing. In particular, Computer Use app-control prompts may remain blue because their request metadata can become readable only after the user has responded.
 
@@ -56,6 +56,7 @@ Signal Monitor currently depends on local Codex data formats and integration sur
 - Open **Diagnostics…** first if state changes are missing. The optional Hook is a supplemental fallback, not a requirement.
 - Open **Diagnostics…** to check the Codex and Node runtimes, hook installation, bridge process, snapshot age, and recent bridge log. The copied report excludes task titles, prompts, code, and full home paths.
 - If Codex was updated or moved, quit and reopen both Codex and Signal Monitor.
+- Choose **Reset Settings…** to restore the default focus list, nicknames, language, orientation, sorting, panel position, and completion acknowledgements. Hook integration and Launch at Login are intentionally preserved.
 
 To remove the integration while keeping the app, choose **Set Up Codex Integration… → Remove Integration**. To remove all local app data after quitting, delete `~/Library/Application Support/Signal Monitor` and the app's macOS preferences. See [PRIVACY.md](PRIVACY.md) for the exact data boundary.
 

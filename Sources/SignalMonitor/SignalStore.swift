@@ -313,6 +313,26 @@ final class SignalStore: ObservableObject {
         refreshDisplayTasks()
     }
 
+    func resetPreferencesToDefaults() {
+        focusedThreadIDs = []
+        nicknames = [:]
+        language = .english
+        orientation = .horizontal
+        focusSortMode = .lastStartedTime
+        hookStates.removeAll()
+        acknowledgedCompletions = [:]
+        didBaselineExistingCompletions = false
+
+        UserDefaults.standard.set([String](), forKey: focusedKey)
+        UserDefaults.standard.set([String: String](), forKey: nicknamesKey)
+        UserDefaults.standard.set(AppLanguage.english.rawValue, forKey: languageKey)
+        UserDefaults.standard.set(StripOrientation.horizontal.rawValue, forKey: orientationKey)
+        UserDefaults.standard.set(FocusSortMode.lastStartedTime.rawValue, forKey: focusSortKey)
+        UserDefaults.standard.set([String: Double](), forKey: acknowledgedCompletionsKey)
+        UserDefaults.standard.set(false, forKey: completionTrackingInitializedKey)
+        refreshDisplayTasks()
+    }
+
     var localizedConnectionText: String { language.connection(connectionText) }
 
 }
