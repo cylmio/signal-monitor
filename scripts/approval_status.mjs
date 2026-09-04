@@ -1,3 +1,18 @@
+// Keep classification inside SQLite: command bodies must not leave the query.
+// Match the executable at the start of cmd, not an rm path mentioned in an argument.
+const removalExecutables = ["rm", "/bin/rm", "/usr/bin/rm"];
+const removalCommands = removalExecutables.flatMap(command =>
+  [command, `sudo ${command}`, `command ${command}`, `exec ${command}`]);
+const commandPrefixes = ['cmd:"', 'cmd: "', '"cmd":"', '"cmd": "'];
+export const approvalCandidatePredicateSQL = `(
+  feedback_log_body LIKE '%tools.apply_patch%'
+  OR feedback_log_body LIKE '%request_user_input%'
+  OR (feedback_log_body LIKE '%sandbox_permissions%' AND feedback_log_body LIKE '%require_escalated%')
+  OR ${commandPrefixes.flatMap(prefix => removalCommands.map(command =>
+    `feedback_log_body LIKE '%${prefix}${command} %'`
+  )).join("\n  OR ")}
+)`;
+
 export class ApprovalStatusTracker {
   constructor(graceMs = 600) {
     this.graceMs = graceMs;

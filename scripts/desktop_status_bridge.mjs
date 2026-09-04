@@ -7,7 +7,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { rolloutInfoFromFile } from "./rollout_status.mjs";
-import { ApprovalStatusTracker } from "./approval_status.mjs";
+import { ApprovalStatusTracker, approvalCandidatePredicateSQL } from "./approval_status.mjs";
 
 const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const hostParentPID = process.ppid;
@@ -43,13 +43,7 @@ function refreshApprovalSignals() {
            CASE
              WHEN target = 'codex_core::stream_events_utils'
               AND feedback_log_body LIKE '%ToolCall:%'
-              AND (
-                feedback_log_body LIKE '%tools.apply_patch%'
-                OR feedback_log_body LIKE '%request_user_input%'
-                OR (feedback_log_body LIKE '%sandbox_permissions%' AND feedback_log_body LIKE '%require_escalated%')
-                OR feedback_log_body LIKE '%cmd:"rm %'
-                OR feedback_log_body LIKE '%cmd: "rm %'
-              ) THEN 'candidate'
+              AND ${approvalCandidatePredicateSQL} THEN 'candidate'
              WHEN target = 'codex_core::stream_events_utils'
               AND feedback_log_body LIKE '%ToolCall:%' THEN 'toolCall'
              WHEN target = 'codex_core::session::handlers'

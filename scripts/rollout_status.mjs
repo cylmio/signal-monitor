@@ -40,12 +40,15 @@ function applyLine(record, line, cwd) {
   if (item.type === "event_msg") {
     const type = String(payload.type ?? "").toLowerCase();
     if (type === "task_started") {
+      record.pendingCalls.clear();
       record.state = "active";
       record.completedAt = null;
     } else if (type === "task_complete") {
+      record.pendingCalls.clear();
       record.state = "completed";
       record.completedAt = Date.parse(item.timestamp) || Date.now();
     } else if (type === "turn_aborted") {
+      record.pendingCalls.clear();
       record.state = "idle";
       record.completedAt = null;
     } else if (type.includes("approval") || type.includes("request_user_input") || type.includes("needs_input")) {
@@ -60,10 +63,14 @@ function applyLine(record, line, cwd) {
       : JSON.stringify(payload.arguments ?? "");
     const requestsEscalation = /["']?sandbox_permissions["']?\s*:\s*["']require_escalated["']/.test(toolInput);
     const requestsExternalPatch = patchTargetsOutsideCwd(toolInput, cwd);
-    if (payload.type === "custom_tool_call" && (name === "request_user_input" || requestsEscalation || requestsExternalPatch)) {
+    const callId = payload.call_id ?? "legacy-unidentified";
+    const isCall = ["custom_tool_call", "function_call"].includes(payload.type);
+    const isOutput = ["custom_tool_call_output", "function_call_output"].includes(payload.type);
+    if (isCall && (name === "request_user_input" || requestsEscalation || requestsExternalPatch)) {
+      record.pendingCalls.add(callId);
       record.state = "needsInput";
       record.completedAt = null;
-    } else if (payload.type === "custom_tool_call_output" && record.state === "needsInput") {
+    } else if (isOutput && record.pendingCalls.delete(callId) && record.pendingCalls.size === 0 && record.state === "needsInput") {
       record.state = "active";
     }
   }
@@ -92,7 +99,7 @@ export function rolloutInfoFromFile(filePath, nowMs = Date.now(), cwd = null) {
 
   let record = cache.get(filePath);
   if (!record || stat.size < record.size) {
-    record = { size: 0, state: stat.mtimeMs > nowMs - 10_000 ? "active" : "idle", completedAt: null };
+    record = { size: 0, state: stat.mtimeMs > nowMs - 10_000 ? "active" : "idle", completedAt: null, pendingCalls: new Set() };
     const start = Math.max(0, stat.size - MAX_READ_BYTES);
     applyChunk(record, readRange(filePath, start, stat.size - start), start > 0, cwd);
   } else if (stat.size > record.size) {

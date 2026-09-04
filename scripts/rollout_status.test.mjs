@@ -7,6 +7,26 @@ import { clearRolloutStatusCache, rolloutInfoFromFile, statusFromRollout } from 
 
 const line = (timestamp, type, payload) => JSON.stringify({ timestamp, type, payload }) + "\n";
 
+test("parallel tool outputs only clear their own pending approval", () => {
+  clearRolloutStatusCache();
+  const directory = mkdtempSync(path.join(os.tmpdir(), "signal-monitor-rollout-"));
+  const file = path.join(directory, "rollout.jsonl");
+  const stamp = "2026-09-03T12:00:00.000Z";
+  writeFileSync(file, line(stamp, "event_msg", { type: "task_started" }));
+  for (const id of ["approval-a", "approval-b"]) {
+    appendFileSync(file, line(stamp, "response_item", {
+      type: "function_call", name: "request_user_input", call_id: id,
+    }));
+  }
+  assert.equal(statusFromRollout(file), "needsInput");
+  for (const id of ["unrelated", "approval-a"]) {
+    appendFileSync(file, line(stamp, "response_item", { type: "function_call_output", call_id: id }));
+    assert.equal(statusFromRollout(file), "needsInput");
+  }
+  appendFileSync(file, line(stamp, "response_item", { type: "function_call_output", call_id: "approval-b" }));
+  assert.equal(statusFromRollout(file), "active");
+});
+
 test("derives lifecycle state from appended rollout records", () => {
   clearRolloutStatusCache();
   const directory = mkdtempSync(path.join(os.tmpdir(), "signal-monitor-rollout-"));
