@@ -20,7 +20,7 @@ The app is free and local-first. It has no account, analytics, ads, or cloud ser
 
 Signal Monitor works best as an at-a-glance companion, rather than an authoritative real-time event stream. Task start, stop, completion, and task-list changes normally update automatically. Once Codex has recorded a lifecycle event locally, an active task is usually reflected within about 0.75–1.5 seconds; idle polling can take up to about 2 seconds.
 
-Approval prompts are the main current limitation. A command or file-edit approval may initially remain blue, turn amber only after **Allow** is clicked, or remain amber briefly after approval. Some Computer Use approvals may not turn amber at all. Do not rely on the amber state to catch every approval prompt in this early preview.
+Approval-state display latency is the main current limitation. For command, file-edit, and Computer Use approvals, the card may remain blue until the approval event becomes readable locally. If that event arrives late, amber may appear only after **Allow** is clicked; clearing amber after approval can also be delayed. Treat the indicator as a delayed status display, not an immediate approval notification.
 
 ## Requirements
 
