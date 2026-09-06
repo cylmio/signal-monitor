@@ -21,11 +21,16 @@ fi
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_DIR/Contents/Info.plist")
 DMG="$ROOT_DIR/dist/Signal-Monitor-$VERSION.dmg"
-/bin/rm -f "$DMG"
-/usr/bin/hdiutil create -volname "Signal Monitor" -srcfolder "$APP_DIR" -ov -format UDZO "$DMG"
+# Stage the app bundle itself, rather than its contents, at the volume root.
+STAGING_DIR=$(/usr/bin/mktemp -d "$ROOT_DIR/dist/dmg-stage.XXXXXX")
+trap '/bin/rm -rf "$STAGING_DIR"' EXIT
+/usr/bin/ditto "$APP_DIR" "$STAGING_DIR/Signal Monitor.app"
+/bin/ln -s /Applications "$STAGING_DIR/Applications"
+/usr/bin/hdiutil create -volname "Signal Monitor" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG"
 /usr/bin/codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 /usr/bin/xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 /usr/bin/xcrun stapler staple "$DMG"
+/usr/bin/xcrun stapler validate "$DMG"
 /usr/sbin/spctl --assess --type open --context context:primary-signature -v "$DMG"
 
 print "Release ready: $DMG"
