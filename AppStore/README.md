@@ -44,6 +44,10 @@ xcodebuild \
   -allowProvisioningUpdates
 ```
 
+To upload the archive without submitting it for review, replace
+`AppStore/ExportOptions.plist` with `AppStore/UploadOptions.plist`. This requires
+an existing App Store Connect app record for `com.caiyuli.signalmonitor`.
+
 Before upload, increment `CFBundleVersion` in `Resources/AppStoreInfo.plist` and
 verify the archive's sandbox entitlements and both `arm64` and `x86_64` slices.
 
