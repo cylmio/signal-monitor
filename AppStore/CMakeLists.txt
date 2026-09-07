@@ -10,6 +10,7 @@ set(SIGNAL_MONITOR_SOURCES
     ../Sources/SignalMonitor/SignalState.swift
     ../Sources/SignalMonitor/SignalStore.swift
     ../Sources/SignalMonitor/SignalView.swift
+    ../Sources/SignalMonitor/TaskTile.swift
 )
 
 set(SIGNAL_MONITOR_RESOURCES
