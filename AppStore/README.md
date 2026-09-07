@@ -36,6 +36,14 @@ xcodebuild \
   -allowProvisioningUpdates \
   archive
 
+# CMake places the generated dSYM beside its Release product. Stage it in the
+# archive's standard symbols directory before export so App Store Connect can
+# upload and use it for crash symbolication.
+mkdir -p /private/tmp/SignalMonitorAppStore.xcarchive/dSYMs
+ditto \
+  "AppStore/Generated/Release/Signal Monitor.app.dSYM" \
+  "/private/tmp/SignalMonitorAppStore.xcarchive/dSYMs/Signal Monitor.app.dSYM"
+
 xcodebuild \
   -exportArchive \
   -archivePath /private/tmp/SignalMonitorAppStore.xcarchive \
