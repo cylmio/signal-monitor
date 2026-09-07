@@ -35,7 +35,13 @@ struct FocusSettingsView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "terminal").font(.largeTitle).foregroundStyle(.secondary)
                     Text(store.language.text("No tasks found", "未找到任务")).font(.headline)
-                    Text(store.language.text("Keep the live bridge running, then try again.", "请保持实时桥接运行，然后重试。")).font(.callout).foregroundStyle(.secondary)
+                    #if APP_STORE
+                    Text(store.language.text("Choose your Codex data folder from the menu, or use Demo Mode.", "请从菜单选择 Codex 数据文件夹，或使用演示模式。"))
+                        .font(.callout).foregroundStyle(.secondary)
+                    #else
+                    Text(store.language.text("Keep the live bridge running, then try again.", "请保持实时桥接运行，然后重试。"))
+                        .font(.callout).foregroundStyle(.secondary)
+                    #endif
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

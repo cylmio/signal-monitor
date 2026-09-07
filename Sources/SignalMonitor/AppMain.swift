@@ -3,6 +3,7 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
+#if !APP_STORE
 @main
 struct SignalMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -409,3 +410,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func quit() { NSApp.terminate(nil) }
 }
+#endif

@@ -24,6 +24,8 @@ enum AppLanguage: String, CaseIterable {
         case "Codex desktop status bridge is offline": return "Codex 桌面状态桥已离线"
         case "Live from Codex desktop": return "实时读取 Codex 桌面端"
         case "Live via Codex hooks": return "通过 Codex hooks 实时读取"
+        case "Live from user-selected Codex data": return "实时读取用户授权的 Codex 数据"
+        case "Codex data folder is unavailable": return "Codex 数据文件夹不可用"
         default: return value
         }
     }

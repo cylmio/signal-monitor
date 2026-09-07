@@ -6,7 +6,10 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [.executable(name: "SignalMonitor", targets: ["SignalMonitor"])],
     targets: [
-        .executableTarget(name: "SignalMonitor"),
+        .executableTarget(
+            name: "SignalMonitor",
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
         .testTarget(name: "SignalMonitorTests", dependencies: ["SignalMonitor"])
     ]
 )
