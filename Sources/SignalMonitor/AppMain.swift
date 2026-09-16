@@ -9,91 +9,44 @@ struct SignalMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        Settings { EmptyView() }
+        Settings { FocusSettingsView(store: delegate.store).frame(width: 560, height: 560) }
+            .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Button(delegate.store.language.text("Manage Focus…", "管理聚焦任务…")) {
+                        delegate.showFocusManager()
+                    }
+                    .keyboardShortcut(",", modifiers: .command)
+                }
+            }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let store = SignalStore()
+    fileprivate let store = SignalStore()
     private let integrationInstaller = IntegrationInstaller()
     private let bridgeProcess = BridgeProcessController()
     private var bridge: AppServerBridge!
     private var hookBridge: HookBridge!
-    private var panel: NSPanel!
+    private var stripController: FloatingStripController!
+    private var panel: NSPanel { stripController.panel }
     private var statusItem: NSStatusItem!
-    private var taskSubscription: AnyCancellable?
-    private var orientationSubscription: AnyCancellable?
+    private let menuSession = LiveMenuSession()
+    private var taskMenuSection: FocusedTasksMenuSection?
+    private let panelVisibility = FloatingPanelVisibility()
     private var focusWindow: NSWindow?
     private var diagnosticsWindow: NSWindow?
     private var diagnosticsModel: DiagnosticsModel?
-    private var panelWasExplicitlyHidden = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         bridge = AppServerBridge(store: store)
         hookBridge = HookBridge(store: store)
-        makePanel()
+        stripController = FloatingStripController(store: store)
         makeStatusItem()
         try? integrationInstaller.refreshInstalledHookIfNeeded()
         startLiveMonitoring(showingErrors: false)
         revealPanel(placingOnScreenIfNeeded: true)
-    }
-
-    private func makePanel() {
-        let size = NSSize(width: 86, height: 106)
-        let saved = UserDefaults.standard.string(forKey: "SignalMonitor.panelOrigin")
-            .flatMap(NSPointFromString)
-        let screen = NSScreen.main?.visibleFrame ?? .zero
-        let origin = saved ?? defaultPanelOrigin(for: size, in: screen)
-        panel = NSPanel(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isMovableByWindowBackground = true
-        panel.hidesOnDeactivate = false
-        panel.canHide = false
-        panel.isReleasedWhenClosed = false
-        let hostingView = NSHostingView(rootView: SignalView(store: store).background(Color.clear))
-        hostingView.wantsLayer = true
-        hostingView.layer?.isOpaque = false
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        panel.contentView = hostingView
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.isOpaque = false
-        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        taskSubscription = store.$displayTasks
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePanel() }
-        orientationSubscription = store.$orientation
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePanel() }
-        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { note in
-            guard let window = note.object as? NSWindow else { return }
-            UserDefaults.standard.set(NSStringFromPoint(window.frame.origin), forKey: "SignalMonitor.panelOrigin")
-        }
-        revealPanel(placingOnScreenIfNeeded: true)
-    }
-
-    private func resizePanel() {
-        guard panel != nil else { return }
-        let taskCount = store.displayTasks.count
-        let visibleCount = min(max(taskCount, 1), 6)
-        let width: CGFloat
-        let height: CGFloat
-        switch store.orientation {
-        case .horizontal:
-            width = CGFloat(visibleCount * 74 + max(visibleCount - 1, 0) * 8 + 12)
-            height = 106
-        case .vertical:
-            width = 86
-            height = CGFloat(visibleCount * 93 + max(visibleCount - 1, 0) * 8 + 12)
-        }
-        let oldFrame = panel.frame
-        let newFrame = NSRect(x: oldFrame.maxX - width, y: oldFrame.maxY - height, width: width, height: height)
-        panel.setFrame(newFrame, display: true, animate: oldFrame.width != width)
     }
 
     private func makeStatusItem() {
@@ -104,11 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = NSMenu()
         statusItem.menu?.autoenablesItems = false
         statusItem.menu?.delegate = self
-        if let appMenu = NSApp.mainMenu?.items.first?.submenu {
-            let focusItem = NSMenuItem(title: "Manage Focus…", action: #selector(showFocusManager), keyEquivalent: ",")
-            focusItem.target = self
-            appMenu.insertItem(focusItem, at: min(2, appMenu.items.count))
-        }
     }
 
     private func makeStatusBarIcon() -> NSImage {
@@ -140,62 +88,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return image
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        menuSession.begin(store: store) { [weak self, weak menu] in
+            guard let self, let menu else { return }
+            self.refreshOpenMenu(menu)
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) { menuSession.end() }
+
+    private func refreshOpenMenu(_ menu: NSMenu) {
+        taskMenuSection?.refresh()
+        menu.refreshLocalizedContent()
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menuSession.isTracking { refreshOpenMenu(menu); return }
         menu.removeAllItems()
-        let language = store.language
-        let info = NSMenuItem(title: store.localizedConnectionText, action: nil, keyEquivalent: "")
+        weak var menuStore = store
+        var language: AppLanguage { menuStore?.language ?? .english }
+        let info = LiveTitleMenuItem(title: { [weak self] in self?.store.localizedConnectionText ?? "" })
         info.isEnabled = false
         menu.addItem(info)
         menu.addItem(.separator())
-        add(menu, bridge.isRunning ? language.text("Stop live bridge", "停止实时桥接") : language.text("Start live bridge", "启动实时桥接"), #selector(toggleBridge))
-        add(menu, language.text("Refresh task list", "刷新任务列表"), #selector(refreshTasks))
+        addSectionHeading(menu, "Main")
+        add(menu, language.text("Manage Focus…", "管理聚焦任务…"), #selector(showFocusManager), key: ",")
+        addVisibilityToggle(to: menu, language: language)
+        menu.addItem(.separator())
+        addSectionHeading(menu, language.text("Monitoring", "监控"))
+        addPersistent(
+            to: menu,
+            content: { [weak self] in
+                let running = self?.bridge.isRunning == true
+                return .init(
+                    title: running ? language.text("Stop live bridge", "停止实时桥接") : language.text("Start live bridge", "启动实时桥接"),
+                    symbolName: nil
+                )
+            },
+            action: { [weak self] in self?.toggleBridge() }
+        )
+        addPersistent(
+            to: menu,
+            content: { .init(title: language.text("Refresh task list", "刷新任务列表"), symbolName: nil) },
+            action: { [weak self] in self?.refreshTasks() }
+        )
         add(menu, language.text("Optional Hook Integration…", "可选 Hook 集成…"), #selector(setUpIntegration))
         add(menu, language.text("Diagnostics…", "诊断…"), #selector(showDiagnostics))
-        let loginItem = NSMenuItem(
-            title: language.text("Launch at Login", "登录时启动"),
-            action: #selector(toggleLaunchAtLogin),
-            keyEquivalent: ""
+        menu.addItem(.separator())
+        addSectionHeading(menu, language.text("Settings", "设置"))
+        addPersistent(
+            to: menu,
+            content: {
+                .init(
+                    title: language.text("Launch at Login", "登录时启动"),
+                    symbolName: SMAppService.mainApp.status == .enabled ? "checkmark" : nil
+                )
+            },
+            action: { [weak self] in self?.toggleLaunchAtLogin() }
         )
-        loginItem.target = self
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(loginItem)
-        add(menu, language.text("Manage Focus…", "管理聚焦任务…"), #selector(showFocusManager))
         add(menu, language.text("Reset Settings…", "恢复初始设置…"), #selector(resetSettings))
         addLanguageMenu(to: menu)
-        if !store.displayTasks.isEmpty {
-            menu.addItem(.separator())
-            let heading = NSMenuItem(title: language.text("Focused tasks", "聚焦任务"), action: nil, keyEquivalent: "")
-            heading.isEnabled = false
-            menu.addItem(heading)
-            for task in store.displayTasks {
-                let item = NSMenuItem(title: "\(task.title) · \(task.state.title(in: language))", action: #selector(openFocusedTask(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = task.id
-                item.image = statusDot(for: task.state)
-                menu.addItem(item)
+        taskMenuSection = FocusedTasksMenuSection(
+            menu: menu, store: store,
+            color: { [weak self] state in self?.statusColor(for: state) ?? .gray },
+            open: { [weak self] id in
+                guard let self, self.store.openTaskAndAcknowledge(id) else { NSSound.beep(); return }
             }
-        }
+        )
         menu.addItem(.separator())
-        add(menu, panel.isVisible ? language.text("Hide task strip", "隐藏任务条") : language.text("Show task strip", "显示任务条"), #selector(togglePanel))
         add(menu, language.text("Quit Signal Monitor", "退出 Signal Monitor"), #selector(quit), key: "q")
     }
 
-    private func add(_ menu: NSMenu, _ title: String, _ action: Selector, key: String = "") {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+    private func add(_ menu: NSMenu, _ title: @autoclosure @escaping () -> String, _ action: Selector, key: String = "") {
+        let item = LiveTitleMenuItem(title: title, action: action, key: key)
         item.target = self
+        menu.addItem(item)
+    }
+
+    private func addPersistent(
+        to menu: NSMenu,
+        content: @escaping () -> PersistentMenuItemView.Content,
+        dismissesMenu: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        let item = NSMenuItem(title: content().title, action: nil, keyEquivalent: "")
+        let view = PersistentMenuItemView(content: content, dismissesMenu: dismissesMenu, action: action)
+        item.view = view
+        item.target = view
+        item.action = #selector(PersistentMenuItemView.activate)
+        menu.addItem(item)
+    }
+
+    private func addVisibilityToggle(to menu: NSMenu, language: AppLanguage) {
+        addPersistent(
+            to: menu,
+            content: { [weak self] in
+                let visible = self.map { $0.panelVisibility.isVisible($0.panel) } ?? false
+                let language = self?.store.language ?? language
+                return .init(
+                    title: visible ? language.text("Visible", "可见") : language.text("Hidden", "不可见"),
+                    symbolName: visible ? "eye" : "eye.slash"
+                )
+            },
+            action: { [weak self] in self?.togglePanel() }
+        )
+    }
+
+    private func addSectionHeading(_ menu: NSMenu, _ title: @autoclosure @escaping () -> String) {
+        let item = LiveTitleMenuItem(title: title)
+        item.isEnabled = false
         menu.addItem(item)
     }
 
     private func addLanguageMenu(to menu: NSMenu) {
         let languageMenu = NSMenu()
         for language in AppLanguage.allCases {
-            let item = NSMenuItem(title: language.menuTitle, action: #selector(selectLanguage(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = language.rawValue
-            item.state = store.language == language ? .on : .off
-            languageMenu.addItem(item)
+            addPersistent(
+                to: languageMenu,
+                content: { [weak self] in
+                    .init(title: language.menuTitle, symbolName: self?.store.language == language ? "checkmark" : nil)
+                },
+                action: { [weak self, weak menu] in
+                    self?.store.setLanguage(language)
+                    self?.focusWindow?.title = language.text("Signal Monitor — Focused Tasks", "Signal Monitor — 聚焦任务")
+                    self?.diagnosticsWindow?.title = language.text("Signal Monitor — Diagnostics", "Signal Monitor — 诊断")
+                    self?.diagnosticsModel?.setLanguage(language)
+                    menu?.refreshLocalizedContent()
+                }
+            )
         }
-        let parent = NSMenuItem(title: store.language.text("Language", "语言"), action: nil, keyEquivalent: "")
+        let parent = LiveTitleMenuItem(title: { [weak self] in
+            (self?.store.language ?? .english).text("Language", "语言")
+        })
         parent.submenu = languageMenu
         menu.addItem(parent)
     }
@@ -208,16 +232,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .offline: return NSColor(srgbRed: 0.78, green: 0.78, blue: 0.79, alpha: 1)
         case .idle: return NSColor(srgbRed: 0.69, green: 0.69, blue: 0.70, alpha: 1)
         }
-    }
-
-    private func statusDot(for state: SignalState) -> NSImage {
-        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            self.statusColor(for: state).setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
-            return true
-        }
-        image.isTemplate = false
-        return image
     }
 
     @objc private func toggleBridge() {
@@ -266,7 +280,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showError(error)
         }
     }
-    @objc private func refreshTasks() { bridge.refresh() }
+    @objc private func refreshTasks() {
+        bridge.refresh()
+    }
     @objc private func resetSettings() {
         let language = store.language
         let alert = NSAlert()
@@ -280,10 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         store.resetPreferencesToDefaults()
-        let screen = NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
-        let origin = defaultPanelOrigin(for: panel.frame.size, in: screen)
-        panel.setFrameOrigin(origin)
-        UserDefaults.standard.set(NSStringFromPoint(origin), forKey: "SignalMonitor.panelOrigin")
+        stripController.resetPosition()
         focusWindow?.title = "Signal Monitor — Focused Tasks"
         diagnosticsWindow?.title = "Signal Monitor — Diagnostics"
         diagnosticsModel?.setLanguage(.english)
@@ -305,7 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         diagnosticsWindow?.title = language.text("Signal Monitor — Diagnostics", "Signal Monitor — 诊断")
         diagnosticsModel?.setLanguage(language)
     }
-    @objc private func showFocusManager() {
+    @objc fileprivate func showFocusManager() {
         if focusWindow == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
@@ -321,32 +334,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         focusWindow?.makeKeyAndOrderFront(nil)
+        focusWindow?.makeFirstResponder(nil)
     }
     @objc private func togglePanel() {
-        if panel.isVisible {
-            panelWasExplicitlyHidden = true
-            panel.orderOut(nil)
+        if panelVisibility.isVisible(panel) {
+            panelVisibility.hide(panel)
         } else {
             revealPanel(placingOnScreenIfNeeded: true)
         }
     }
 
     private func revealPanel(placingOnScreenIfNeeded: Bool) {
-        guard panel != nil else { return }
-        panelWasExplicitlyHidden = false
-        if placingOnScreenIfNeeded, !isPanelMeaningfullyOnScreen(panel.frame) {
-            let screen = NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
-            panel.setFrameOrigin(defaultPanelOrigin(for: panel.frame.size, in: screen))
-        }
-        panel.setIsVisible(true)
-        panel.orderFrontRegardless()
-    }
-
-    private func isPanelMeaningfullyOnScreen(_ frame: NSRect) -> Bool {
-        NSScreen.screens.contains { screen in
-            let intersection = frame.intersection(screen.visibleFrame)
-            return intersection.width >= min(44, frame.width) && intersection.height >= min(44, frame.height)
-        }
+        panelVisibility.show(panel)
     }
 
     private func defaultPanelOrigin(for size: NSSize, in visibleFrame: NSRect) -> NSPoint {
@@ -406,6 +405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bridgeProcess.stop()
         hookBridge.stop()
         bridge.stop()
+        stripController.stop()
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

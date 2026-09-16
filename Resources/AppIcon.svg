@@ -1,13 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs>
-    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
-      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#000000" flood-opacity="0.22"/>
-    </filter>
-  </defs>
-  <rect x="142" y="92" width="740" height="840" rx="190" fill="#F3F4F6"/>
-  <rect x="260" y="186" width="504" height="526" rx="128" fill="#479EFF"/>
-  <rect x="230" y="362" width="564" height="398" rx="122" fill="#303338" filter="url(#shadow)"/>
-  <path d="M342 474 L435 557 L342 640" fill="none" stroke="#F7F7F8" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M487 640 H650" fill="none" stroke="#F7F7F8" stroke-width="54" stroke-linecap="round"/>
-  <circle cx="512" cy="848" r="58" fill="#479EFF"/>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="#FFB21A"/>
+  <rect x="226" y="226" width="572" height="572" rx="136" fill="#303338"/>
+  <path d="M316 400 L416 512 L316 624" fill="none" stroke="#F7F7F8" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M500 424 C500 367 548 334 608 334 C679 334 719 375 719 430 C719 510 626 507 608 573" fill="none" stroke="#F7F7F8" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="603" cy="655" r="31" fill="#F7F7F8"/>
 </svg>

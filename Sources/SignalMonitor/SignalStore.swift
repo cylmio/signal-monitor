@@ -3,19 +3,29 @@ import SwiftUI
 
 @MainActor
 final class SignalStore: ObservableObject {
+    static let maximumGridColumns = 8
+    static let maximumGridRows = 6
+
     @Published private(set) var connectionText = "Demo mode"
     @Published private(set) var tasks: [TrackedTask] = []
     @Published private(set) var availableTasks: [TaskMetadata] = []
     @Published private(set) var displayTasks: [TrackedTask] = []
     @Published private(set) var language: AppLanguage
     @Published private(set) var orientation: StripOrientation
+    @Published private(set) var gridColumns: Int
+    @Published private(set) var gridRows: Int
     @Published private(set) var focusSortMode: FocusSortMode
+    @Published private(set) var isDemoMode = false
     @Published var isVisible = true
 
     private let focusedKey = "SignalMonitor.focusedThreadIDs"
     private let nicknamesKey = "SignalMonitor.nicknames"
     private let languageKey = "SignalMonitor.language"
     private let orientationKey = "SignalMonitor.orientation"
+    private let focusLimitKey = "SignalMonitor.focusLimit"
+    private let tasksPerRowKey = "SignalMonitor.tasksPerRow"
+    private let gridColumnsKey = "SignalMonitor.gridColumns"
+    private let gridRowsKey = "SignalMonitor.gridRows"
     private let focusSortKey = "SignalMonitor.focusSortMode"
     private let acknowledgedCompletionsKey = "SignalMonitor.acknowledgedCompletions"
     private let completionTrackingInitializedKey = "SignalMonitor.completionTrackingInitialized"
@@ -32,11 +42,29 @@ final class SignalStore: ObservableObject {
         Self.migrateLegacyPreferencesIfNeeded()
         language = UserDefaults.standard.string(forKey: languageKey)
             .flatMap(AppLanguage.init(rawValue:)) ?? .english
-        orientation = UserDefaults.standard.string(forKey: orientationKey)
+        let initialOrientation = UserDefaults.standard.string(forKey: orientationKey)
             .flatMap(StripOrientation.init(rawValue:)) ?? .horizontal
+        orientation = initialOrientation
         focusSortMode = UserDefaults.standard.string(forKey: focusSortKey)
             .flatMap(FocusSortMode.init(rawValue:)) ?? .lastStartedTime
         focusedThreadIDs = UserDefaults.standard.stringArray(forKey: focusedKey) ?? []
+        let savedFocusLimit = UserDefaults.standard.integer(forKey: focusLimitKey)
+        let savedTasksPerRow = UserDefaults.standard.integer(forKey: tasksPerRowKey)
+        let savedGridColumns = UserDefaults.standard.integer(forKey: gridColumnsKey)
+        let savedGridRows = UserDefaults.standard.integer(forKey: gridRowsKey)
+        let migratedColumns = initialOrientation == .vertical ? 1 : 6
+        var initialColumns = min(Self.maximumGridColumns, max(1, savedGridColumns > 0 ? savedGridColumns : (savedTasksPerRow > 0 ? savedTasksPerRow : migratedColumns)))
+        let desiredCapacity = min(
+            Self.maximumGridColumns * Self.maximumGridRows,
+            max(focusedThreadIDs.count, savedFocusLimit > 0 ? savedFocusLimit : 6)
+        )
+        var initialRows = savedGridRows > 0 ? savedGridRows : Int(ceil(Double(desiredCapacity) / Double(initialColumns)))
+        if initialRows > Self.maximumGridRows {
+            initialColumns = min(Self.maximumGridColumns, max(initialColumns, Int(ceil(Double(desiredCapacity) / Double(Self.maximumGridRows)))))
+            initialRows = Int(ceil(Double(desiredCapacity) / Double(initialColumns)))
+        }
+        gridColumns = initialColumns
+        gridRows = min(Self.maximumGridRows, max(1, initialRows))
         nicknames = UserDefaults.standard.dictionary(forKey: nicknamesKey) as? [String: String] ?? [:]
         acknowledgedCompletions = UserDefaults.standard.dictionary(forKey: acknowledgedCompletionsKey)?
             .compactMapValues { ($0 as? NSNumber)?.doubleValue } ?? [:]
@@ -53,6 +81,10 @@ final class SignalStore: ObservableObject {
             "SignalMonitor.nicknames",
             "SignalMonitor.language",
             "SignalMonitor.orientation",
+            "SignalMonitor.focusLimit",
+            "SignalMonitor.tasksPerRow",
+            "SignalMonitor.gridColumns",
+            "SignalMonitor.gridRows",
             "SignalMonitor.focusSortMode",
             "SignalMonitor.panelOrigin",
             "SignalMonitor.acknowledgedCompletions",
@@ -205,9 +237,22 @@ final class SignalStore: ObservableObject {
 
     @discardableResult
     func openTaskAndAcknowledge(_ id: String) -> Bool {
+        // Demo tasks use intentionally synthetic UUIDs. Never send those IDs to
+        // Codex: doing so makes an otherwise self-contained review path end in a
+        // "task not found" error. A completed demo card can still demonstrate
+        // acknowledgement by changing from green to gray.
+        if isDemoMode {
+            acknowledgeTask(id)
+            return tasks.contains { $0.id == id }
+        }
         guard CodexTaskLink.open(threadID: id) else { return false }
         acknowledgeTask(id)
         return true
+    }
+
+    func setDemoMode(_ enabled: Bool) {
+        isDemoMode = enabled
+        refreshDisplayTasks()
     }
 
     func acknowledgeTask(_ id: String) {
@@ -229,7 +274,10 @@ final class SignalStore: ObservableObject {
     func isFocused(_ id: String) -> Bool { focusedThreadIDs.contains(id) }
 
     func setFocused(_ id: String, _ focused: Bool) {
-        if focused, !focusedThreadIDs.contains(id) { focusedThreadIDs.append(id) }
+        if focused, !focusedThreadIDs.contains(id) {
+            guard focusedThreadIDs.count < focusCapacity else { return }
+            focusedThreadIDs.append(id)
+        }
         if !focused { focusedThreadIDs.removeAll { $0 == id } }
         UserDefaults.standard.set(focusedThreadIDs, forKey: focusedKey)
         refreshDisplayTasks()
@@ -253,11 +301,38 @@ final class SignalStore: ObservableObject {
 
     var focusManagementTasks: [TaskMetadata] {
         let metadataByID = Dictionary(uniqueKeysWithValues: availableTasks.map { ($0.id, $0) })
-        let focused = focusedThreadIDs.compactMap { metadataByID[$0] }
+        // Keep missing selections visible and removable without discarding
+        // the user's saved order when a source temporarily disappears.
+        let focused = focusedThreadIDs.map { id in
+            metadataByID[id] ?? TaskMetadata(
+                id: id,
+                title: nicknames[id] ?? "Task \(id.suffix(6))",
+                cwd: nil
+            )
+        }
         let remaining = availableTasks
             .filter { !focusedThreadIDs.contains($0.id) }
             .sorted(by: automaticTaskComesBefore)
         return focused + remaining
+    }
+
+    var focusedTaskCount: Int { focusedThreadIDs.count }
+    func isTaskAvailable(_ id: String) -> Bool { availableTasks.contains { $0.id == id } }
+    var focusCapacity: Int { gridColumns * gridRows }
+    var canFocusMoreTasks: Bool { focusedThreadIDs.count < focusCapacity }
+
+    func setGridColumns(_ value: Int) {
+        let candidate = min(Self.maximumGridColumns, max(1, value))
+        guard candidate * gridRows >= focusedThreadIDs.count else { return }
+        gridColumns = candidate
+        UserDefaults.standard.set(gridColumns, forKey: gridColumnsKey)
+    }
+
+    func setGridRows(_ value: Int) {
+        let candidate = min(Self.maximumGridRows, max(1, value))
+        guard gridColumns * candidate >= focusedThreadIDs.count else { return }
+        gridRows = candidate
+        UserDefaults.standard.set(gridRows, forKey: gridRowsKey)
     }
 
     func nickname(for id: String) -> String { nicknames[id] ?? "" }
@@ -270,6 +345,12 @@ final class SignalStore: ObservableObject {
     }
 
     private func refreshDisplayTasks() {
+        // Demo is a temporary visual overlay. Showing its cards must not add
+        // synthetic IDs to (or otherwise rewrite) the user's saved focus list.
+        if isDemoMode {
+            displayTasks = tasks
+            return
+        }
         if focusedThreadIDs.isEmpty {
             displayTasks = []
             return
@@ -318,6 +399,8 @@ final class SignalStore: ObservableObject {
         nicknames = [:]
         language = .english
         orientation = .horizontal
+        gridColumns = 6
+        gridRows = 1
         focusSortMode = .lastStartedTime
         hookStates.removeAll()
         acknowledgedCompletions = [:]
@@ -327,6 +410,8 @@ final class SignalStore: ObservableObject {
         UserDefaults.standard.set([String: String](), forKey: nicknamesKey)
         UserDefaults.standard.set(AppLanguage.english.rawValue, forKey: languageKey)
         UserDefaults.standard.set(StripOrientation.horizontal.rawValue, forKey: orientationKey)
+        UserDefaults.standard.set(6, forKey: gridColumnsKey)
+        UserDefaults.standard.set(1, forKey: gridRowsKey)
         UserDefaults.standard.set(FocusSortMode.lastStartedTime.rawValue, forKey: focusSortKey)
         UserDefaults.standard.set([String: Double](), forKey: acknowledgedCompletionsKey)
         UserDefaults.standard.set(false, forKey: completionTrackingInitializedKey)

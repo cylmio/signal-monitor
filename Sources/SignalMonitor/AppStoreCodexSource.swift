@@ -69,7 +69,11 @@ final class AppStoreCodexSource {
         if codexDirectory == nil {
             loadDemo()
         } else {
-            refresh()
+            // A security-scoped bookmark can outlive the selected folder or its
+            // permission. Startup must remain usable after reinstall/update, so
+            // silently fall back to the fully local demo instead of presenting a
+            // blocking database alert.
+            refresh(showingErrors: false, fallbackToDemoOnFailure: true)
         }
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh(showingErrors: false) }
@@ -113,6 +117,7 @@ final class AppStoreCodexSource {
             clearDemoFocus()
             activate(directory)
             rolloutCache.removeAll()
+            store?.setDemoMode(false)
             refresh(showingErrors: true)
         } catch {
             NSAlert(error: error).runModal()
@@ -120,21 +125,47 @@ final class AppStoreCodexSource {
     }
 
     func useDemo() {
+        loadDemo()
+    }
+
+    func exitDemo() {
+        guard store?.isDemoMode == true else { return }
+        store?.setDemoMode(false)
+        clearDemoFocus()
+        if codexDirectory != nil {
+            refresh(showingErrors: true)
+        } else {
+            store?.replaceDesktopTasks(with: [])
+            store?.setConnection("Choose a Codex data folder")
+        }
+    }
+
+    private func disconnect() {
         UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         if isAccessingSecurityScope { codexDirectory?.stopAccessingSecurityScopedResource() }
         isAccessingSecurityScope = false
         codexDirectory = nil
         rolloutCache.removeAll()
-        loadDemo()
     }
 
-    func refresh(showingErrors: Bool = true) {
-        guard let directory = codexDirectory else { return }
+    func refresh(showingErrors: Bool = true, fallbackToDemoOnFailure: Bool = false) {
+        // Demo remains stable until the user explicitly exits it. In
+        // particular, the polling timer must not replace it with live data.
+        if store?.isDemoMode == true { return }
+        guard let directory = codexDirectory else {
+            return
+        }
         do {
             let snapshots = try snapshots(from: directory)
+            store?.setDemoMode(false)
             store?.replaceDesktopTasks(with: snapshots)
             store?.setConnection("Live from user-selected Codex data")
         } catch {
+            if fallbackToDemoOnFailure {
+                disconnect()
+                loadDemo()
+                return
+            }
             store?.setConnection("Codex data folder is unavailable")
             if showingErrors { NSAlert(error: error).runModal() }
         }
@@ -332,8 +363,8 @@ final class AppStoreCodexSource {
             DesktopTaskSnapshot(id: Self.demoTaskIDs[2], title: "Space", cwd: nil, status: .needsInput, createdAt: now - 200, lastStartedAt: now - 40),
             DesktopTaskSnapshot(id: Self.demoTaskIDs[3], title: "Release", cwd: nil, status: .completed, createdAt: now - 100, lastStartedAt: now - 60, completionAt: now),
         ]
+        store?.setDemoMode(true)
         store?.replaceDesktopTasks(with: items)
-        for item in items { store?.setFocused(item.id, true) }
         store?.setConnection("Demo mode")
     }
 

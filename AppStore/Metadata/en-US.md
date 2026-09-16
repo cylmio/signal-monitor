@@ -19,7 +19,7 @@ See task state at a glance:
 • Amber — waiting for input
 • Green — completed and not yet reviewed
 
-Choose the tasks you want to focus on, give them short local nicknames, arrange them manually, and switch between horizontal and vertical layouts. Click a card to open the corresponding task in Codex.
+Choose the tasks you want to focus on, give them short local nicknames, arrange them manually, and configure a grid of up to 6 rows and 8 columns. Click a card to open the corresponding task in Codex.
 
 Signal Monitor is free, local-first, and independent. It has no account, ads, analytics, telemetry, or cloud service of its own. The Mac App Store edition uses macOS App Sandbox and reads only the hidden .codex folder you explicitly select. Access is read-only.
 
@@ -47,9 +47,22 @@ https://github.com/cylmio/signal-monitor
 
 Signal Monitor does not require an account or login.
 
-For a self-contained review, launch the app from the menu bar and choose “Use Demo Mode.” This displays four local example tasks covering idle, running, waiting-for-input, and completed states.
+### Self-contained review path (no Codex installation or data required)
 
-To test with Codex data instead, choose “Choose Codex Data Folder…” and select the hidden ~/.codex folder. The app requests a read-only, user-selected security-scoped bookmark and never modifies that folder. Clicking a floating card opens the corresponding task in Codex when Codex is installed.
+1. Launch Signal Monitor and click its terminal-shaped menu-bar icon.
+2. Choose “Getting Started…” under Help, then “Use Demo Mode.” Four local example cards appear: gray (idle), blue (running), amber (waiting for input), and green (completed).
+3. Demo cards remain inside Signal Monitor and never send synthetic task identifiers to Codex. Click the green completed card to acknowledge it; it changes to gray without opening another app or showing an error.
+4. Demo Mode previews the four states; it does not replace saved live-task focus selections. Use the live-data path below to test task selection, ordering, and nicknames.
+5. Choose “Exit Demo Mode” in the help window or menu to leave the preview.
+
+### Live Codex data initialization
+
+1. Click the menu-bar icon and choose “Choose Codex Data Folder…”.
+2. Select the hidden `.codex` folder in the current user's home directory. The folder must contain `state_5.sqlite`. The Open panel displays hidden folders, and the app receives read-only access only to the selected folder.
+3. Open the menu again and choose “Manage Focus…”.
+4. Check the tasks that should appear in the floating strip. Checked tasks can be manually reordered and given local nicknames; the same window controls rows and columns. Return saves a nickname and exits editing.
+5. With Codex installed, clicking a live task card opens the corresponding task in Codex.
+
+If a previously authorized folder is unavailable after reinstall or migration, Signal Monitor falls back to Demo Mode instead of presenting a blocking startup error. The user can select a new `.codex` folder at any time.
 
 The app has no analytics, advertising, telemetry, account system, or network service of its own.
-

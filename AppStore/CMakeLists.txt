@@ -7,9 +7,13 @@ set(SIGNAL_MONITOR_SOURCES
     ../Sources/SignalMonitor/AppStoreMain.swift
     ../Sources/SignalMonitor/AppStoreCodexSource.swift
     ../Sources/SignalMonitor/FocusSettingsView.swift
+    ../Sources/SignalMonitor/FloatingStripController.swift
+    ../Sources/SignalMonitor/LiveMenuSession.swift
+    ../Sources/SignalMonitor/PersistentMenuItemView.swift
     ../Sources/SignalMonitor/SignalState.swift
     ../Sources/SignalMonitor/SignalStore.swift
     ../Sources/SignalMonitor/SignalView.swift
+    ../Sources/SignalMonitor/StripGeometry.swift
     ../Sources/SignalMonitor/TaskTile.swift
 )
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct TaskTile: View {
     let task: TrackedTask
     let time: TimeInterval
+    var opensCodex = true
 
     var body: some View {
         VStack(spacing: 5) {
@@ -50,7 +51,7 @@ struct TaskTile: View {
         .frame(width: 74)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(task.title): \(task.state.title)")
-        .accessibilityHint("Open this task in Codex")
+        .accessibilityHint(opensCodex ? "Open this task in Codex" : "Demo preview; completed tasks can be acknowledged")
         .accessibilityAddTraits(.isButton)
     }
 

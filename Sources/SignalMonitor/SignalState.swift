@@ -26,6 +26,7 @@ enum AppLanguage: String, CaseIterable {
         case "Live via Codex hooks": return "通过 Codex hooks 实时读取"
         case "Live from user-selected Codex data": return "实时读取用户授权的 Codex 数据"
         case "Codex data folder is unavailable": return "Codex 数据文件夹不可用"
+        case "Choose a Codex data folder": return "请选择 Codex 数据文件夹"
         default: return value
         }
     }

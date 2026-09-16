@@ -5,6 +5,43 @@ import XCTest
 
 final class AppStoreCodexSourceTests: XCTestCase {
     @MainActor
+    func testDemoModeNeverOpensSyntheticTaskInCodex() {
+        let store = SignalStore(baselineExistingCompletions: false)
+        let source = AppStoreCodexSource(store: store)
+
+        source.useDemo()
+
+        XCTAssertTrue(store.isDemoMode)
+        XCTAssertEqual(store.availableTasks.count, 4)
+        guard let completed = store.tasks.first(where: { $0.state == .ready }) else {
+            return XCTFail("Demo should include a completed task")
+        }
+        XCTAssertTrue(store.openTaskAndAcknowledge(completed.id))
+        XCTAssertEqual(store.tasks.first(where: { $0.id == completed.id })?.state, .idle)
+    }
+
+    @MainActor
+    func testDemoModePreservesFocusedTaskConfiguration() {
+        let store = SignalStore(baselineExistingCompletions: false)
+        let source = AppStoreCodexSource(store: store)
+        let focusedID = "live-\(UUID().uuidString)"
+        store.setFocused(focusedID, true)
+        defer { store.setFocused(focusedID, false) }
+
+        source.useDemo()
+
+        XCTAssertTrue(store.isDemoMode)
+        XCTAssertTrue(store.isFocused(focusedID))
+        XCTAssertEqual(store.displayTasks.count, 4)
+
+        source.exitDemo()
+
+        XCTAssertFalse(store.isDemoMode)
+        XCTAssertTrue(store.isFocused(focusedID))
+        XCTAssertTrue(store.displayTasks.isEmpty)
+    }
+
+    @MainActor
     func testNativeSandboxSourceReadsTaskAndRolloutWithoutAHelperProcess() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
