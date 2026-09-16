@@ -8,10 +8,11 @@ The app is free and local-first. It has no account, analytics, ads, or cloud ser
 
 ## What it does
 
-- Shows selected Codex tasks in a transparent horizontal or vertical strip.
+- Shows selected Codex tasks in a floating grid, configurable up to 6 rows × 8 columns.
 - Uses opaque gray, blue, amber, and green cards for idle, running, waiting/blocked, and completed states.
 - Opens the corresponding task in Codex when a card or menu row is clicked.
 - Supports local nicknames and manual ordering for focused tasks.
+- Keeps the grid within the screen with native movement animations; Return saves a nickname and ends editing.
 - Sorts unselected tasks by creation time or most recent task start.
 - Discovers newly created and removed tasks automatically; the menu also includes a manual refresh.
 - Includes English and Simplified Chinese UI, Launch at Login, a confirmed **Reset Settings…** action, and a privacy-safe diagnostics report.
@@ -27,19 +28,13 @@ Approval-state display latency is the main current limitation. For command, file
 - macOS 13 or later on Apple silicon or Intel.
 - The Codex desktop app or Codex CLI installed locally, plus a local Node.js runtime. The app discovers the runtime bundled with the desktop app and common Homebrew locations automatically.
 
-## Early preview
+## Download
 
-The source is available as an early preview while the first notarized binary is being prepared. To try it now:
+[Download Signal Monitor 0.1.1 for macOS](https://github.com/cylmio/signal-monitor/releases/download/v0.1.1/Signal-Monitor-0.1.1.dmg). The Universal app supports Apple silicon and Intel, is Developer ID signed, and is notarized by Apple.
 
-```sh
-git clone https://github.com/cylmio/signal-monitor.git
-cd signal-monitor
-swift test
-zsh scripts/package_app.sh
-open "dist/Signal Monitor.app"
-```
+Open the DMG, drag **Signal Monitor** to **Applications**, and launch it. When updating, quit the previous version before replacing it. Open **Manage Focus…** from the menu-bar terminal icon and select tasks, set the grid size, and optionally edit nicknames or reorder tasks.
 
-Then open **Manage Focus…** from the menu-bar terminal icon and select tasks. A signed and notarized DMG will be added to GitHub Releases once the distribution identity is ready.
+This is still an early preview; please read the approval-display limitations above. See [release notes](https://github.com/cylmio/signal-monitor/releases/tag/v0.1.1) for changes and the download checksum.
 
 No Hook installation is required for normal live status. An optional Hook integration is available from the menu to supplement waiting-for-input signals on compatible Codex sessions. If enabled, Signal Monitor merges its entries into `~/.codex/hooks.json`, preserves unrelated hooks, and creates a timestamped backup before each change.
 
@@ -68,11 +63,13 @@ Signal Monitor currently depends on local Codex data formats and integration sur
 - If Codex was updated or moved, quit and reopen both Codex and Signal Monitor.
 - Choose **Reset Settings…** to restore the default focus list, nicknames, language, orientation, sorting, panel position, and completion acknowledgements. Hook integration and Launch at Login are intentionally preserved.
 
-To remove the integration while keeping the app, choose **Set Up Codex Integration… → Remove Integration**. To remove all local app data after quitting, delete `~/Library/Application Support/Signal Monitor` and the app's macOS preferences. See [PRIVACY.md](PRIVACY.md) for the exact data boundary.
+To remove the integration while keeping the app, choose **Optional Hook Integration… → Remove Integration**. To remove all local app data after quitting, delete `~/Library/Application Support/Signal Monitor` and the app's macOS preferences. See [PRIVACY.md](PRIVACY.md) for the exact data boundary.
 
 ## Build from source
 
 ```sh
+git clone https://github.com/cylmio/signal-monitor.git
+cd signal-monitor
 swift test
 python3 scripts/verify_bridge.py
 zsh scripts/package_app.sh
@@ -91,6 +88,6 @@ Secrets are read from the login keychain through the named notary profile and ar
 
 ## Distribution note
 
-Version 0.1 targets a free, notarized GitHub release. The current integration reads local Codex data and can install user-approved hooks, which is suitable for direct distribution but would require a separate sandbox-compatible architecture before a Mac App Store submission.
+The free GitHub DMG uses a local Node.js bridge and offers optional user-approved hooks. A separate [sandboxed Mac App Store target](AppStore/README.md) is included in the same open-source repository: it reads a user-selected Codex data folder natively, without Node.js or hooks. The Store edition is not yet publicly available. The editions share the floating-card UI but have different integration and permission models.
 
 Signal Monitor is licensed under the [MIT License](LICENSE). Contributions are described in [CONTRIBUTING.md](CONTRIBUTING.md).

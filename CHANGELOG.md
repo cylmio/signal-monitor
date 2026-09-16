@@ -11,7 +11,7 @@
 - Store edition: self-contained demo interactions and an in-app setup/help window.
 - Added geometry and presentation regression tests.
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-09-06
 
 - Native floating horizontal or vertical task cards with opaque status colors.
 - Focus selection, local nicknames, manual focused ordering, and automatic ordering for other tasks.
