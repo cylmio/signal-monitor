@@ -41,6 +41,8 @@ target_link_libraries(SignalMonitorAppStore PRIVATE
 )
 
 set_target_properties(SignalMonitorAppStore PROPERTIES
+    OUTPUT_NAME "Signal Monitor"
+    XCODE_GENERATE_SCHEME TRUE
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/../Resources/AppStoreInfo.plist"
     XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
     XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/../Resources/SignalMonitorAppStore.entitlements"
@@ -52,7 +54,6 @@ set_target_properties(SignalMonitorAppStore PROPERTIES
     XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/../Frameworks"
     XCODE_ATTRIBUTE_MACOSX_DEPLOYMENT_TARGET "13.0"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.caiyuli.signalmonitor"
-    XCODE_ATTRIBUTE_PRODUCT_NAME "Signal Monitor"
     XCODE_ATTRIBUTE_SDKROOT "macosx"
     XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
     XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS "macosx"
