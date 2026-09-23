@@ -43,7 +43,11 @@ https://github.com/cylmio/signal-monitor
 
 2026 CAI YULI
 
-## App Review notes
+## What's New — 1.0.1
+
+Improved responsiveness when dragging floating task cards, including smoother drag initiation and immediate edge recovery. Task data is now read and processed in the background to keep the interface responsive. Existing focus selections, nicknames, and layout settings are preserved.
+
+## App Review notes — setup
 
 Signal Monitor does not require an account or login.
 

@@ -30,11 +30,11 @@ Approval-state display latency is the main current limitation. For command, file
 
 ## Download
 
-[Download Signal Monitor 0.1.1 for macOS](https://github.com/cylmio/signal-monitor/releases/download/v0.1.1/Signal-Monitor-0.1.1.dmg). The Universal app supports Apple silicon and Intel, is Developer ID signed, and is notarized by Apple.
+[Download Signal Monitor 0.1.2 for macOS](https://github.com/cylmio/signal-monitor/releases/download/v0.1.2/Signal-Monitor-0.1.2.dmg). The Universal app supports Apple silicon and Intel, is Developer ID signed, and is notarized by Apple.
 
 Open the DMG, drag **Signal Monitor** to **Applications**, and launch it. When updating, quit the previous version before replacing it. Open **Manage Focus…** from the menu-bar terminal icon and select tasks, set the grid size, and optionally edit nicknames or reorder tasks.
 
-This is still an early preview; please read the approval-display limitations above. See [release notes](https://github.com/cylmio/signal-monitor/releases/tag/v0.1.1) for changes and the download checksum.
+This is still an early preview; please read the approval-display limitations above. See [release notes](https://github.com/cylmio/signal-monitor/releases/tag/v0.1.2) for changes and the download checksum.
 
 No Hook installation is required for normal live status. An optional Hook integration is available from the menu to supplement waiting-for-input signals on compatible Codex sessions. If enabled, Signal Monitor merges its entries into `~/.codex/hooks.json`, preserves unrelated hooks, and creates a timestamped backup before each change.
 
@@ -88,6 +88,6 @@ Secrets are read from the login keychain through the named notary profile and ar
 
 ## Distribution note
 
-The free GitHub DMG uses a local Node.js bridge and offers optional user-approved hooks. A separate [sandboxed Mac App Store target](AppStore/README.md) is included in the same open-source repository: it reads a user-selected Codex data folder natively, without Node.js or hooks. The Store edition is not yet publicly available. The editions share the floating-card UI but have different integration and permission models.
+The free GitHub DMG uses a local Node.js bridge and offers optional user-approved hooks. A separate [sandboxed Mac App Store target](AppStore/README.md) is included in the same open-source repository: it reads a user-selected Codex data folder natively, without Node.js or hooks. Signal Monitor for codex is also available on the Mac App Store. The editions share the floating-card UI but have different integration and permission models.
 
 Signal Monitor is licensed under the [MIT License](LICENSE). Contributions are described in [CONTRIBUTING.md](CONTRIBUTING.md).

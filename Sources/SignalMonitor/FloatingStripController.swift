@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class SafeFloatingPanel: NSPanel {
     private var dragStart: (mouse: NSPoint, frame: NSRect)?
+    private var mouseDownAnchor: (mouse: NSPoint, frame: NSRect)?
     var didFinishDrag: (() -> Void)?
     var didBeginDrag: (() -> Void)?
     var isDragging: Bool { dragStart != nil }
@@ -43,22 +44,43 @@ final class SafeFloatingPanel: NSPanel {
         view.addGestureRecognizer(gesture)
     }
 
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            // Capture before AppKit arbitrates a card click versus a pan.
+            // Window coordinates are converted before the window starts moving.
+            mouseDownAnchor = (convertPoint(toScreen: event.locationInWindow), frame)
+        }
+        super.sendEvent(event)
+        if event.type == .leftMouseUp {
+            mouseDownAnchor = nil
+        }
+    }
+
     @objc private func drag(_ gesture: NSPanGestureRecognizer) {
         switch gesture.state {
         case .began:
             didBeginDrag?()
-            dragStart = (NSEvent.mouseLocation, frame)
+            dragStart = mouseDownAnchor ?? (NSEvent.mouseLocation, frame)
+            // Include motion accumulated during recognition, and move on the
+            // began event itself instead of waiting for the next changed event.
+            updateDragPosition()
         case .changed:
-            guard let start = dragStart, let safeFrame else { return }
-            let mouse = NSEvent.mouseLocation
-            let proposed = start.frame.offsetBy(dx: mouse.x - start.mouse.x, dy: mouse.y - start.mouse.y)
-            setFrame(StripGeometry.resisted(proposed, to: safeFrame), display: true)
+            updateDragPosition()
         case .ended, .cancelled:
             dragStart = nil
             didFinishDrag?()
         default:
             break
         }
+    }
+
+    private func updateDragPosition() {
+        guard let start = dragStart, let safeFrame else { return }
+        let mouse = NSEvent.mouseLocation
+        let target = StripGeometry.draggedFrame(
+            from: start.frame, mouseDown: start.mouse, mouse: mouse, within: safeFrame
+        )
+        if target.origin != frame.origin { setFrameOrigin(target.origin) }
     }
 }
 
@@ -136,7 +158,14 @@ final class FloatingStripController: NSObject {
             if self.needsScreenRefresh {
                 self.refreshScreenBounds()
             }
-            self.resizePanel()
+            // A drag must settle immediately, even if it interrupted reflow.
+            // Shrinking the transparent canvas doesn't move its top-left.
+            let size = self.panelSize(taskCount: self.store.displayTasks.count)
+            let desired = StripGeometry.anchoredFrame(size: size, from: self.panel.frame)
+            self.panel.setFrame(desired, display: true)
+            let target = self.panel.hardConstrainedFrame(desired)
+            self.panel.settleLayout(to: target)
+            self.savePanelFrame(target)
         }
         taskSubscription = store.$displayTasks.map(\.count).removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] _ in self?.resizePanel() }
         layoutSubscription = store.$gridColumns.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.resizePanel() }

@@ -103,7 +103,7 @@ struct TaskMetadata: Identifiable, Equatable {
     var lastStartedAt: TimeInterval? = nil
 }
 
-struct DesktopTaskSnapshot {
+struct DesktopTaskSnapshot: Equatable {
     let id: String
     let title: String?
     let cwd: String?

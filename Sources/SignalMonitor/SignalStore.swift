@@ -376,7 +376,9 @@ final class SignalStore: ObservableObject {
         return lhs.id < rhs.id
     }
 
-    func setConnection(_ text: String) { connectionText = text }
+    func setConnection(_ text: String) {
+        if connectionText != text { connectionText = text }
+    }
 
     func setLanguage(_ newLanguage: AppLanguage) {
         language = newLanguage

@@ -7,6 +7,12 @@ enum StripGeometry {
     static let spacing: CGFloat = 8
     static let padding: CGFloat = 6
 
+    static func draggedFrame(from frame: CGRect, mouseDown: CGPoint,
+                             mouse: CGPoint, within visible: CGRect) -> CGRect {
+        resisted(frame.offsetBy(dx: mouse.x - mouseDown.x, dy: mouse.y - mouseDown.y),
+                 to: visible)
+    }
+
     static func offset(index: Int, columns: Int) -> CGPoint {
         let columns = max(columns, 1)
         return CGPoint(x: CGFloat(index % columns) * (tileWidth + spacing),

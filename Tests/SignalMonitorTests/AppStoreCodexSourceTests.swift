@@ -42,7 +42,7 @@ final class AppStoreCodexSourceTests: XCTestCase {
     }
 
     @MainActor
-    func testNativeSandboxSourceReadsTaskAndRolloutWithoutAHelperProcess() throws {
+    func testNativeSandboxSourceReadsTaskAndRolloutWithoutAHelperProcess() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -74,14 +74,28 @@ final class AppStoreCodexSourceTests: XCTestCase {
         """
         XCTAssertEqual(sqlite3_exec(database, schema, nil, nil, nil), SQLITE_OK)
 
-        let store = SignalStore(baselineExistingCompletions: false)
-        let source = AppStoreCodexSource(store: store)
-        let snapshots = try source.snapshots(from: root)
+        let source = CodexSnapshotReader()
+        let snapshots = try await source.snapshots(from: root)
 
         XCTAssertEqual(snapshots.count, 1)
         XCTAssertEqual(snapshots.first?.title, "Native task")
         XCTAssertEqual(snapshots.first?.createdAt, 1)
         XCTAssertEqual(snapshots.first?.lastStartedAt, 2)
         XCTAssertEqual(snapshots.first?.status, .needsInput)
+
+        // A busy database must not block UI events while the reader waits.
+        XCTAssertEqual(sqlite3_exec(database, "BEGIN EXCLUSIVE", nil, nil, nil), SQLITE_OK)
+        defer { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) }
+        let start = Date()
+        let blockedRead = Task { try await source.snapshots(from: root) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5,
+                          "Main actor should remain responsive during SQLite's busy timeout")
+        do {
+            _ = try await blockedRead.value
+            XCTFail("Locked database must report failure, not an empty task list")
+        } catch {
+            XCTAssertTrue(error is AppStoreCodexSourceError)
+        }
     }
 }

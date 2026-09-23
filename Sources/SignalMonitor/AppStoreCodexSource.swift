@@ -38,25 +38,27 @@ private struct CachedRollout {
 @MainActor
 final class AppStoreCodexSource {
     private static let bookmarkKey = "SignalMonitor.appStoreCodexBookmark"
-    private static let maximumTailBytes = 4 * 1024 * 1024
     private static let demoTaskIDs = [
         "11111111-1111-4111-8111-111111111111",
         "22222222-2222-4222-8222-222222222222",
         "33333333-3333-4333-8333-333333333333",
         "44444444-4444-4444-8444-444444444444",
     ]
-    private static let fractionalISO8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let ISO8601 = ISO8601DateFormatter()
-
     private weak var store: SignalStore?
     private var timer: Timer?
     private var codexDirectory: URL?
     private var isAccessingSecurityScope = false
-    private var rolloutCache: [String: CachedRollout] = [:]
+    private var reader = CodexSnapshotReader()
+    private var refreshTask: Task<Void, Never>?
+    private var generation = 0
+    private var lastSnapshots: [DesktopTaskSnapshot]?
+
+    private func invalidateRefresh() {
+        generation += 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        lastSnapshots = nil
+    }
 
     init(store: SignalStore) {
         self.store = store
@@ -81,6 +83,7 @@ final class AppStoreCodexSource {
     }
 
     func stop() {
+        invalidateRefresh()
         timer?.invalidate()
         timer = nil
         if isAccessingSecurityScope { codexDirectory?.stopAccessingSecurityScopedResource() }
@@ -116,7 +119,6 @@ final class AppStoreCodexSource {
             UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
             clearDemoFocus()
             activate(directory)
-            rolloutCache.removeAll()
             store?.setDemoMode(false)
             refresh(showingErrors: true)
         } catch {
@@ -145,7 +147,8 @@ final class AppStoreCodexSource {
         if isAccessingSecurityScope { codexDirectory?.stopAccessingSecurityScopedResource() }
         isAccessingSecurityScope = false
         codexDirectory = nil
-        rolloutCache.removeAll()
+        invalidateRefresh()
+        reader = CodexSnapshotReader()
     }
 
     func refresh(showingErrors: Bool = true, fallbackToDemoOnFailure: Bool = false) {
@@ -155,34 +158,31 @@ final class AppStoreCodexSource {
         guard let directory = codexDirectory else {
             return
         }
-        do {
-            let snapshots = try snapshots(from: directory)
-            store?.setDemoMode(false)
-            store?.replaceDesktopTasks(with: snapshots)
-            store?.setConnection("Live from user-selected Codex data")
-        } catch {
-            if fallbackToDemoOnFailure {
-                disconnect()
-                loadDemo()
-                return
+        guard refreshTask == nil else { return } // Never queue overlapping polls.
+        let revision = generation
+        let worker = reader
+        refreshTask = Task { [weak self] in
+            do {
+                let snapshots = try await worker.snapshots(from: directory)
+                guard let self, !Task.isCancelled, self.generation == revision,
+                      self.store?.isDemoMode != true else { return }
+                self.refreshTask = nil
+                if self.lastSnapshots != snapshots {
+                    self.store?.replaceDesktopTasks(with: snapshots)
+                    self.lastSnapshots = snapshots
+                }
+                self.store?.setConnection("Live from user-selected Codex data")
+            } catch {
+                guard let self, !Task.isCancelled, self.generation == revision else { return }
+                self.refreshTask = nil
+                if fallbackToDemoOnFailure {
+                    self.disconnect()
+                    self.loadDemo()
+                    return
+                }
+                self.store?.setConnection("Codex data folder is unavailable")
+                if showingErrors { NSAlert(error: error).runModal() }
             }
-            store?.setConnection("Codex data folder is unavailable")
-            if showingErrors { NSAlert(error: error).runModal() }
-        }
-    }
-
-    func snapshots(from directory: URL) throws -> [DesktopTaskSnapshot] {
-        try readThreads(databaseURL: directory.appendingPathComponent("state_5.sqlite")).map { record in
-            let rollout = rolloutStatus(path: record.rolloutPath, cwd: record.cwd)
-            return DesktopTaskSnapshot(
-                id: record.id,
-                title: record.title,
-                cwd: record.cwd,
-                status: rollout.state,
-                createdAt: record.createdAt,
-                lastStartedAt: record.recencyAt,
-                completionAt: rollout.completionAt
-            )
         }
     }
 
@@ -209,6 +209,8 @@ final class AppStoreCodexSource {
     }
 
     private func activate(_ directory: URL) {
+        invalidateRefresh()
+        reader = CodexSnapshotReader()
         if isAccessingSecurityScope { codexDirectory?.stopAccessingSecurityScopedResource() }
         codexDirectory = directory
         isAccessingSecurityScope = directory.startAccessingSecurityScopedResource()
@@ -219,6 +221,55 @@ final class AppStoreCodexSource {
         let child = selected.appendingPathComponent(".codex", isDirectory: true)
         if FileManager.default.fileExists(atPath: child.appendingPathComponent("state_5.sqlite").path) { return child }
         throw AppStoreCodexSourceError.invalidDirectory
+    }
+
+    private func loadDemo() {
+        invalidateRefresh()
+        let now = Date().timeIntervalSince1970
+        let items = [
+            DesktopTaskSnapshot(id: Self.demoTaskIDs[0], title: "Review", cwd: nil, status: .idle, createdAt: now - 400, lastStartedAt: now - 300),
+            DesktopTaskSnapshot(id: Self.demoTaskIDs[1], title: "Monitor", cwd: nil, status: .active(flags: []), createdAt: now - 300, lastStartedAt: now - 20),
+            DesktopTaskSnapshot(id: Self.demoTaskIDs[2], title: "Space", cwd: nil, status: .needsInput, createdAt: now - 200, lastStartedAt: now - 40),
+            DesktopTaskSnapshot(id: Self.demoTaskIDs[3], title: "Release", cwd: nil, status: .completed, createdAt: now - 100, lastStartedAt: now - 60, completionAt: now),
+        ]
+        store?.setDemoMode(true)
+        store?.replaceDesktopTasks(with: items)
+        store?.setConnection("Demo mode")
+    }
+
+    private func clearDemoFocus() {
+        for id in Self.demoTaskIDs { store?.setFocused(id, false) }
+    }
+}
+
+/// Owns all blocking SQLite/file I/O and parser caches off the UI actor.
+actor CodexSnapshotReader {
+    private static let maximumTailBytes = 4 * 1024 * 1024
+    private static let fractionalISO8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let ISO8601 = ISO8601DateFormatter()
+
+    private var rolloutCache: [String: CachedRollout] = [:]
+    func snapshots(from directory: URL) throws -> [DesktopTaskSnapshot] {
+        try Task.checkCancellation()
+        let access = directory.startAccessingSecurityScopedResource()
+        defer { if access { directory.stopAccessingSecurityScopedResource() } }
+        return try readThreads(databaseURL: directory.appendingPathComponent("state_5.sqlite")).map { record in
+            try Task.checkCancellation()
+            let rollout = rolloutStatus(path: record.rolloutPath, cwd: record.cwd)
+            return DesktopTaskSnapshot(
+                id: record.id,
+                title: record.title,
+                cwd: record.cwd,
+                status: rollout.state,
+                createdAt: record.createdAt,
+                lastStartedAt: record.recencyAt,
+                completionAt: rollout.completionAt
+            )
+        }
     }
 
     private func readThreads(databaseURL: URL) throws -> [NativeThreadRecord] {
@@ -255,7 +306,8 @@ final class AppStoreCodexSource {
         defer { sqlite3_finalize(statement) }
 
         var records: [NativeThreadRecord] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var step = sqlite3_step(statement)
+        while step == SQLITE_ROW {
             guard let id = text(statement, column: 0) else { continue }
             records.append(NativeThreadRecord(
                 id: id,
@@ -265,6 +317,10 @@ final class AppStoreCodexSource {
                 createdAt: number(statement, column: 4),
                 recencyAt: number(statement, column: 5)
             ))
+            step = sqlite3_step(statement)
+        }
+        guard step == SQLITE_DONE else {
+            throw AppStoreCodexSourceError.database(String(cString: sqlite3_errmsg(database)))
         }
         return records
     }
@@ -355,20 +411,4 @@ final class AppStoreCodexSource {
         }
     }
 
-    private func loadDemo() {
-        let now = Date().timeIntervalSince1970
-        let items = [
-            DesktopTaskSnapshot(id: Self.demoTaskIDs[0], title: "Review", cwd: nil, status: .idle, createdAt: now - 400, lastStartedAt: now - 300),
-            DesktopTaskSnapshot(id: Self.demoTaskIDs[1], title: "Monitor", cwd: nil, status: .active(flags: []), createdAt: now - 300, lastStartedAt: now - 20),
-            DesktopTaskSnapshot(id: Self.demoTaskIDs[2], title: "Space", cwd: nil, status: .needsInput, createdAt: now - 200, lastStartedAt: now - 40),
-            DesktopTaskSnapshot(id: Self.demoTaskIDs[3], title: "Release", cwd: nil, status: .completed, createdAt: now - 100, lastStartedAt: now - 60, completionAt: now),
-        ]
-        store?.setDemoMode(true)
-        store?.replaceDesktopTasks(with: items)
-        store?.setConnection("Demo mode")
-    }
-
-    private func clearDemoFocus() {
-        for id in Self.demoTaskIDs { store?.setFocused(id, false) }
-    }
 }

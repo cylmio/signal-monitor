@@ -2,6 +2,20 @@ import XCTest
 @testable import SignalMonitor
 
 final class StripGeometryTests: XCTestCase {
+    func testDragIncludesRecognitionDistanceWithoutAccumulatingDrift() {
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let initial = CGRect(x: 100, y: 200, width: 250, height: 105)
+        let down = CGPoint(x: 120, y: 220)
+        XCTAssertEqual(StripGeometry.draggedFrame(from: initial, mouseDown: down,
+                        mouse: CGPoint(x: 126, y: 225), within: screen),
+                       initial.offsetBy(dx: 6, dy: 5))
+        XCTAssertEqual(StripGeometry.draggedFrame(from: initial, mouseDown: down,
+                        mouse: CGPoint(x: 130, y: 227), within: screen),
+                       initial.offsetBy(dx: 10, dy: 7))
+        XCTAssertEqual(StripGeometry.draggedFrame(from: initial, mouseDown: down,
+                        mouse: down, within: screen), initial)
+    }
+
     func testFortyEightTasksFitSixRowsOfEight() {
         XCTAssertEqual(StripGeometry.size(count: 48, columns: 8), CGSize(width: 660, height: 610))
         XCTAssertEqual(StripGeometry.offset(index: 47, columns: 8), CGPoint(x: 574, y: 505))
